@@ -1,0 +1,2 @@
+model,lopo_accuracy_mean,lopo_accuracy_std,lopo_f1_mean,lopo_f1_std,random_split_accuracy,random_split_f1
+SVM RBF (features),0.6937500000000001,0.13104150105977874,0.6753472195709712,0.15497953765052436,0.921875,0.922082922058931
