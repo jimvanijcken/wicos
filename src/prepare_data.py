@@ -4,11 +4,11 @@ Interim script so model work can start before the final data-processing code exi
 Pre-processing constants and the train/test split are copied from wicos.ipynb, so the
 outputs line up with the notebook (same SEED, same stratified 20% test set).
 
-Usage:  python prepare_data.py
+Usage:  python src/prepare_data.py
 Input:  data/Person */<gesture>/Person?g?s*.csv  (unzipped DopNet archives)
-Output: processed/wicos_dataset.npz   images, features, labels, split (see bottom of file)
-        processed/features.csv        same features + metadata, one row per sample
-        processed/feature_ranking.csv mutual information per feature (training set only)
+Output: data/processed/wicos_dataset.npz   images, features, labels, split (see bottom of file)
+        data/processed/features.csv      same features + metadata, one row per sample
+        data/processed/feature_ranking.csv mutual information per feature (training set only)
 """
 import re
 from pathlib import Path
@@ -21,8 +21,9 @@ from sklearn.feature_selection import mutual_info_classif
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
 SEED = 42
-DATA_ROOT = Path("data")
-OUT_DIR = Path("processed")
+ROOT = Path(__file__).resolve().parent.parent  # repo root
+DATA_ROOT = ROOT / "data"
+OUT_DIR = DATA_ROOT / "processed"
 
 # file names: g1=wave, g2=pinch, g3=swipe, g4=click
 GESTURES = ["wave", "pinch", "swipe", "click"]
