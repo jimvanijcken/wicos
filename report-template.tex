@@ -43,7 +43,7 @@
 \usepackage{subcaption}
 \usepackage{xcolor}
 \usepackage{tikz}
-\usetikzlibrary{decorations.pathreplacing}
+\usetikzlibrary{decorations.pathreplacing,arrows.meta}
 
 % ---------- colours for data-split figures (colour-blind safe) ----------
 \definecolor{trainc}{RGB}{68,119,170}
@@ -131,14 +131,79 @@ Describe the end-to-end pipeline:
 \end{itemize}
 Figure must be legible (readable font size, vector format preferred).}
 
-\begin{figure}[h]
+% ---------- Workflow figure ----------
+% Columns at x = 1.45 + 3.4k; row 1 at y = 0 (two lanes at +-0.6), row 2 at y = -2.9.
+% Colours match the data-split figures: blue = training, orange = validation, grey = test.
+\begin{figure}[ht]
   \centering
-  \fbox{\parbox[c][4cm][c]{0.85\linewidth}{\centering
-    Workflow figure: data loading $\rightarrow$ pre-processing $\rightarrow$
-    feature extraction $\rightarrow$ split $\rightarrow$ models (classical ML +
-    DNN) $\rightarrow$ tuning/validation $\rightarrow$ test evaluation}}
-  % \includegraphics[width=0.9\linewidth]{figures/pipeline.pdf}
-  \caption{Overview of the proposed machine learning pipeline.}
+  \begin{tikzpicture}[font=\footnotesize,
+      box/.style={draw, rounded corners=2pt, align=center, text width=2.7cm,
+        inner sep=3pt, line width=0.6pt},
+      big/.style={box, minimum height=2.2cm},
+      lane/.style={box, minimum height=1.0cm},
+      low/.style={box, minimum height=1.4cm},
+      data/.style={draw=black!70, fill=white},
+      train/.style={draw=trainc, fill=trainc!12},
+      val/.style={draw=valc, fill=valc!15},
+      test/.style={draw=testc, fill=testc!20},
+      arr/.style={-{Stealth[length=5pt]}, line width=0.7pt},
+      sw/.style={draw, line width=0.6pt, minimum width=0.35cm, minimum height=0.25cm}]
+
+    % ---- row 1: data -> split -> pre-processing -> two model branches ----
+    \node[big, data]  (raw)   at (1.45, 0) {\textbf{Raw data}\\[2pt]
+      960 spectrograms\\ 6 persons $\times$ 4 gestures $\times$ 40\\[2pt]
+      800 Doppler $\times$ 43--448 time bins};
+    \node[big, data]  (split) at (4.85, 0) {\textbf{Hold-out split}\\[2pt]
+      stratified on\\ person $\times$ gesture\\[2pt]
+      train: 768 (80\%)\\ test: 192 (20\%)};
+    \node[big, train] (prep)  at (8.25, 0) {\textbf{Pre-processing}\\[2pt]
+      Doppler crop 140--660\\ floor at $-40$\,dB\\ scale to $[0,1]$};
+    \node[lane, train] (resize) at (11.65,  0.6) {\textbf{Resize}\\ to $128 \times 128$};
+    \node[lane, train] (feat)   at (11.65, -0.6) {\textbf{Feature extraction\\ \& selection}};
+    \node[lane, train] (cnn)    at (15.05,  0.6) {\textbf{CNN}\\ (deep neural network)};
+    \node[lane, train] (clf)    at (15.05, -0.6) {\textbf{Classical models}\\ LR, SVM, RF};
+
+    % ---- row 2 (right to left): selection -> LOSO -> retrain -> test ----
+    \node[low, val]   (cv)      at (15.05, -2.9) {\textbf{Model \& hyper-\\parameter selection}\\
+      stratified 5-fold CV};
+    \node[low, val]   (loso)    at (11.65, -2.9) {\textbf{Generalisation check}\\
+      leave-one-subject-out (6 folds)};
+    \node[low, train] (retrain) at (8.25, -2.9) {\textbf{Retrain}\\
+      selected model on all 768 training samples};
+    \node[low, test]  (eval)    at (4.85, -2.9) {\textbf{Final evaluation}\\
+      on test set, once\\ accuracy, macro-F1, confusion matrix};
+
+    % ---- arrows ----
+    \draw[arr] (raw) -- (split);
+    \draw[arr] (split) -- (prep);
+    \draw[arr] (prep.east) -- ++(0.25, 0) |- (resize.west);
+    \draw[arr] (prep.east) -- ++(0.25, 0) |- (feat.west);
+    \draw[arr] (resize) -- (cnn);
+    \draw[arr] (feat) -- (clf);
+    \draw[arr] (cnn.east) -- ++(0.25, 0) |- (cv.east);
+    \draw[arr] (clf) -- (cv);
+    \draw[arr] (cv) -- (loso);
+    \draw[arr] (loso) -- (retrain);
+    \draw[arr] (retrain) -- (eval);
+    % test set bypasses all training and tuning
+    \draw[arr, testc, dashed] (split) -- (eval)
+      node[midway, right, align=left, font=\scriptsize, text=black]
+      {test set, held out;\\ same pre-processing};
+
+    % ---- legend ----
+    \node[sw, train] (l1) at (0.3, -2.35) {};
+    \node[anchor=west, font=\scriptsize] at (l1.east) {training data};
+    \node[sw, val]   (l2) at (0.3, -2.9) {};
+    \node[anchor=west, font=\scriptsize] at (l2.east) {validation};
+    \node[sw, test]  (l3) at (0.3, -3.45) {};
+    \node[anchor=west, font=\scriptsize] at (l3.east) {test data};
+  \end{tikzpicture}
+  \caption{Overview of the machine learning pipeline. The test set is
+    separated before any analysis and is used only once, for the final
+    evaluation. All pre-processing constants are chosen from the training
+    samples only and applied to each sample separately. The CNN uses the
+    resized spectrograms; the classical models use features computed on the
+    spectrograms at their original length.}
   \label{fig:pipeline}
 \end{figure}
 
