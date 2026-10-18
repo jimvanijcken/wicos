@@ -1,0 +1,4 @@
+n_blocks,filters,parameters,LOSO train,LOSO validation,Random train,Random validation
+4,8-16-32-32,23332,0.983,0.672,0.967,0.913
+5,8-16-32-32-32,26436,0.992,0.727,0.989,0.958
+6,8-16-32-32-32-32,34148,0.986,0.69,0.98,0.956
