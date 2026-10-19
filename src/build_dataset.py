@@ -1,12 +1,12 @@
-"""Build a model-ready DopNet dataset: pre-processed images + hand-crafted features.
+"""Build a model-ready DopNet dataset: pre-processed images + envelope features.
 
 Loads the CSVs, makes the train/test split and CV folds, and calls
     preprocessing.preprocess          -> images for the image models (see preprocessing.py)
-    features.extract_features         -> hand-crafted features for the feature models (see features.py)
+    features.extract_features         -> envelope features for the feature models (see features.py)
 The split (20% test set, 5-fold CV, both stratified on person and gesture) is explained in
-data_exploration.ipynb.
+notebooks/1_data_exploration.ipynb.
 
-Usage:  python src/prepare_data.py
+Usage:  python src/build_dataset.py
 Input:  data/Person */<gesture>/Person?g?s*.csv  (unzipped DopNet archives)
 Output: data/processed/wicos_dataset.npz   images, features, labels, split (see bottom of file)
         data/processed/features.csv      same features + metadata, one row per sample
@@ -84,7 +84,7 @@ def main():
 
     # Images for the image models
     print("Pre-processing images ...")
-    X_img = np.stack([preprocess(x) for x in spectrograms])
+    X_img = preprocess(spectrograms)
 
     # Features for the feature models (original length, so the duration is kept)
     print("Extracting features ...")
