@@ -10,7 +10,8 @@
 Input spectrograms are as returned by build_dataset.load_data(): 2D arrays
 (n_doppler=800, n_time) in dB, peak-normalised to 0 dB, zero Doppler at bin 400.
 Every step uses only the clip itself, so it can be applied to any clip without leakage.
-The constants below are derived on the training clips in notebooks/2_preprocessing.ipynb.
+The constants below are derived on the training clips in notebooks/2a_preprocessing_parameters.ipynb
+(derivation) and visualised step by step in notebooks/2b_preprocessing_steps.ipynb.
 """
 
 import numpy as np
