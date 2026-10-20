@@ -45,6 +45,7 @@
 \usepackage{tikz}
 \usepackage{wrapfig}
 \usepackage{ragged2e}
+\usepackage{todonotes}
 
 \usetikzlibrary{decorations.pathreplacing,arrows.meta}
 
@@ -104,51 +105,38 @@ project:
   \item One-sentence main take-away.
 \end{itemize}}
 
+
+
+
+
+
+\newpage
 % =====================================================================
 \section{Machine Learning Pipeline}
 \label{sec:pipeline}
 % =====================================================================
-\placeholder{%
-\textbf{Rubric: ML pipeline description (5\%) + part of Appropriate use of
-data (10\%).} The structure explicitly requires a \textbf{workflow figure}.
-Describe the end-to-end pipeline:
-\begin{itemize}
-  \item \textbf{Context / data source:} DopNet radar (see GitHub page
-        \url{https://github.com/UCLRadarGroup/DopNet}); short explanation of what
-        a spectrogram is here (Doppler/velocity of the fingers vs.\ time,
-        magnitude already in log/dB scale). Each spectrogram = one sample,
-        classified regardless of who performed it.
-  \item \textbf{Data description:} CSV per sample, naming
-        \texttt{Person<X>g<k>s<n>.csv} with $k$: 1=wave, 2=pinch, 3=swipe,
-        4=click; matrix size (e.g.\ 800 Doppler bins $\times$ variable number of
-        time bins -- state how you handled varying length); total number of
-        samples and class balance.
-  \item \textbf{Data split strategy:} train / validation / test. Justify it
-        (e.g.\ random stratified split vs.\ leave-one-subject-out to test
-        generalisation to unseen people). Make clear the test set is never
-        used for training or tuning (no data leakage).
-  \item \textbf{Stages:} raw data $\rightarrow$ pre-processing $\rightarrow$
-        (feature extraction / selection) $\rightarrow$ model training \&
-        hyperparameter tuning $\rightarrow$ validation $\rightarrow$ final test
-        evaluation.
-\end{itemize}
-Figure must be legible (readable font size, vector format preferred).}
+The data comes from the DopNet dataset published by the UCL Radar Group \cite{dopnet}. It has been recorded using an Ancortek 24 GHz FMCW radar with a bandwidth of 750 MHz. The recorded samples are micro Doppler spectrograms that show the radar magnitude as a function of time and Doppler frequency. The Doppler frequency is proportional to the radial velocity of the measured moving object. Movement away from the radar generates a positive Doppler shift, while movement towards the radar generates a negative Doppler shift.
+\\\\
+The used dataset contains 960 labelled samples of different gestures made with a human hand. Each sample is provided as a CSV file, labelled with it's gesture, person and repetition. There are 4 gestures (wave, pinch, swipe and click) performed by 6 persons. The measurement for each combination has been repeated 40 times, resulting in a perfectly balanced dataset.
+\\\\
+Each sample has 800 Doppler bins, where zero Doppler is in the centre at bin 400. The dataset does not contain NaN or infinite values. The magnitude values have already been normalized to each sample's maximum at 0 dB. The goal of this project is to train a model that can classify the 4 gestures based on their spectrograms. The main model will focus on recognising gestures only from people it has seen before. The generalization of the chosen models to new people will also be tested, but that is not the primary objective for this report.
 
-% todo add describtion of dataset (radar data with gestures etc)
 
-The provided dataset contains 960 labelled samples. The samples are distributed evenly among 6 different persons and 4 gestures, with 40 samples for each combination of those. The dataset is therefore perfectly balanced. When splitting data into a train and test set, the balance can be maintained using a stratified split. The dataset does not contain NaN or infinite values. The magnitude values have already been normalized to each sample's maximum at 0 dB.
-
+\subsection{Pipeline}
+\todo{the pipline paragraph is AI written, needs to be rewritten and checked.}
+\todo{Discuss the pipeline with Huib. Currently model in tuned using LOSO, i would tune it with 5 fold cv and then just evaluate LOSO at the end. Additionally the 35 features dont exist, we will only use envelopes because we only have time to implement a single paper.}
+\Cref{fig:pipeline} gives an overview. Each spectrogram is first pre-processed separately: the background noise is removed, the Doppler axis is cropped to the bins that can contain the gesture and the values are scaled to $[0, 1]$ (\cref{sec:preprocessing}). The constants of these steps are derived on the training samples only. The pre-processed data is then used in two forms. The image models, a convolutional neural network (CNN) and an SVM on principal components (SVM + PCA), use the spectrograms resized to $128 \times 128$ pixels. The feature models, logistic regression (LR), an SVM and a random forest (RF), use 35 envelope features computed on the spectrograms at their original length, so that the gesture duration is preserved (\cref{sec:features}). Feature standardisation and PCA are part of a scikit-learn \texttt{Pipeline}, so they are fitted on the training folds only. The hyperparameters of every model are tuned with a grid search, and the models are compared on accuracy, macro-averaged F1 score and confusion matrices (\cref{sec:task2}).
 % ---------- Workflow figure ----------
-% Columns at x = 1.45 + 3.4k; row 1 at y = 0 (two lanes at +-0.6), row 2 at y = -2.9.
+% Columns at x = 1.45 + 3.4k. Row 1 at y = 0 (two lanes at +-0.6);
+% row 2: test lane at y = -2.6, LOSO lane at y = -3.9.
 % Colours match the data-split figures: blue = training, orange = validation, grey = test.
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}[font=\footnotesize,
       box/.style={draw, rounded corners=2pt, align=center, text width=2.7cm,
         inner sep=3pt, line width=0.6pt},
-      big/.style={box, minimum height=2.2cm},
+      big/.style={box, minimum height=2.3cm},
       lane/.style={box, minimum height=1.0cm},
-      low/.style={box, minimum height=1.4cm},
       data/.style={draw=black!70, fill=white},
       train/.style={draw=trainc, fill=trainc!12},
       val/.style={draw=valc, fill=valc!15},
@@ -156,153 +144,172 @@ The provided dataset contains 960 labelled samples. The samples are distributed 
       arr/.style={-{Stealth[length=5pt]}, line width=0.7pt},
       sw/.style={draw, line width=0.6pt, minimum width=0.35cm, minimum height=0.25cm}]
 
-    % ---- row 1: data -> split -> pre-processing -> two model branches ----
-    \node[big, data]  (raw)   at (1.45, 0) {\textbf{Raw data}\\[2pt]
+    % ---- row 1: data -> pre-processing -> two input forms -> models -> tuning ----
+    \node[big, data]  (raw)  at (1.45, 0) {\textbf{Raw data}\\[2pt]
       960 spectrograms\\ 6 persons $\times$ 4 gestures $\times$ 40\\[2pt]
       800 Doppler $\times$ 43--448 time bins};
-    \node[big, data]  (split) at (4.85, 0) {\textbf{Hold-out split}\\[2pt]
-      stratified on\\ person $\times$ gesture\\[2pt]
-      train: 768 (80\%)\\ test: 192 (20\%)};
-    \node[big, train] (prep)  at (8.25, 0) {\textbf{Pre-processing}\\[2pt]
-      Doppler crop 140--660\\ floor at $-40$\,dB\\ scale to $[0,1]$};
-    \node[lane, train] (resize) at (11.65,  0.6) {\textbf{Resize}\\ to $128 \times 128$};
-    \node[lane, train] (feat)   at (11.65, -0.6) {\textbf{Feature extraction\\ \& selection}};
-    \node[lane, train] (cnn)    at (15.05,  0.6) {\textbf{CNN}\\ (deep neural network)};
-    \node[lane, train] (clf)    at (15.05, -0.6) {\textbf{Classical models}\\ LR, SVM, RF};
+    \node[big, data]  (prep) at (4.85, 0) {\textbf{Pre-processing}\\ per sample\\[2pt]
+      noise removal\\ Doppler crop 60--739\\ scale to $[0, 1]$};
+    \node[lane, data]  (resize) at (8.25,  0.6) {\textbf{Resize}\\ to $128 \times 128$};
+    \node[lane, data]  (feat)   at (8.25, -0.6) {\textbf{Envelope features}\\ 35, original length};
+    \node[lane, train] (imgm)   at (11.65,  0.6) {\textbf{Image models}\\ CNN, SVM + PCA};
+    \node[lane, train] (featm)  at (11.65, -0.6) {\textbf{Feature models}\\ LR, SVM, RF};
+    \node[big, val]   (tune) at (15.05, 0) {\textbf{Hyperparameter tuning}\\[2pt]
+      grid search, stratified 5-fold CV on 768 training samples};
 
-    % ---- row 2 (right to left): selection -> LOSO -> retrain -> test ----
-    \node[low, val]   (cv)      at (15.05, -2.9) {\textbf{Model \& hyper-\\parameter selection}\\
-      stratified 5-fold CV};
-    \node[low, val]   (loso)    at (11.65, -2.9) {\textbf{Generalisation check}\\
-      leave-one-subject-out (6 folds)};
-    \node[low, train] (retrain) at (8.25, -2.9) {\textbf{Retrain}\\
-      selected model on all 768 training samples};
-    \node[low, test]  (eval)    at (4.85, -2.9) {\textbf{Final evaluation}\\
-      on test set, once\\ accuracy, macro-F1, confusion matrix};
+    % ---- row 2 (right to left): fixed settings -> test set and LOSO -> results ----
+    \node[box, val, minimum height=2.3cm] (fixed) at (15.05, -3.25) {\textbf{Selected setting}\\[2pt]
+      highest mean CV accuracy;\\ fixed from here on};
+    \node[lane, train] (retrain) at (11.65, -2.6) {\textbf{Retrain}\\ on all 768 samples};
+    \node[lane, test]  (test)    at (8.25, -2.6) {\textbf{Test}\\ once, 192 held-out samples};
+    \node[lane, val]   (loso)    at (11.65, -3.9) {\textbf{Leave-one-subject-out}\\ 6 folds, all 960 samples};
+    \node[lane, val]   (losores) at (8.25, -3.9) {\textbf{LOSO score}\\ per held-out person};
+    \node[box, data, minimum height=2.3cm] (comp) at (4.85, -3.25) {\textbf{Results}\\[2pt]
+      test: known persons\\[2pt] LOSO: new person};
 
     % ---- arrows ----
-    \draw[arr] (raw) -- (split);
-    \draw[arr] (split) -- (prep);
+    \draw[arr] (raw) -- (prep);
     \draw[arr] (prep.east) -- ++(0.25, 0) |- (resize.west);
     \draw[arr] (prep.east) -- ++(0.25, 0) |- (feat.west);
-    \draw[arr] (resize) -- (cnn);
-    \draw[arr] (feat) -- (clf);
-    \draw[arr] (cnn.east) -- ++(0.25, 0) |- (cv.east);
-    \draw[arr] (clf) -- (cv);
-    \draw[arr] (cv) -- (loso);
-    \draw[arr] (loso) -- (retrain);
-    \draw[arr] (retrain) -- (eval);
-    % test set bypasses all training and tuning
-    \draw[arr, testc, dashed] (split) -- (eval)
-      node[midway, right, align=left, font=\scriptsize, text=black]
-      {test set, held out;\\ same pre-processing};
+    \draw[arr] (resize) -- (imgm);
+    \draw[arr] (feat) -- (featm);
+    \draw[arr] (imgm.east) -- ++(0.35, 0) |- (tune.west);
+    \draw[arr] (featm.east) -- ++(0.35, 0) |- (tune.west);
+    \draw[arr] (tune) -- (fixed);
+    \draw[arr] (fixed.west) -- ++(-0.35, 0) |- (retrain.east);
+    \draw[arr] (fixed.west) -- ++(-0.35, 0) |- (loso.east);
+    \draw[arr] (retrain) -- (test);
+    \draw[arr] (test.west) -- (comp.east |- test.west);
+    \draw[arr] (loso) -- (losores);
+    \draw[arr] (losores.west) -- (comp.east |- losores.west);
 
     % ---- legend ----
-    \node[sw, train] (l1) at (0.3, -2.35) {};
-    \node[anchor=west, font=\scriptsize] at (l1.east) {training data};
-    \node[sw, val]   (l2) at (0.3, -2.9) {};
+    \node[sw, data]  (l0) at (0.3, -2.3) {};
+    \node[anchor=west, font=\scriptsize] at (l0.east) {data processing};
+    \node[sw, train] (l1) at (0.3, -2.85) {};
+    \node[anchor=west, font=\scriptsize] at (l1.east) {training};
+    \node[sw, val]   (l2) at (0.3, -3.4) {};
     \node[anchor=west, font=\scriptsize] at (l2.east) {validation};
-    \node[sw, test]  (l3) at (0.3, -3.45) {};
-    \node[anchor=west, font=\scriptsize] at (l3.east) {test data};
+    \node[sw, test]  (l3) at (0.3, -3.95) {};
+    \node[anchor=west, font=\scriptsize] at (l3.east) {test};
   \end{tikzpicture}
-  \caption{Overview of the machine learning pipeline. The test set is
-    separated before any analysis and is used only once, for the final
-    evaluation. All pre-processing constants are chosen from the training
-    samples only and applied to each sample separately. The CNN uses the
-    resized spectrograms; the classical models use features computed on the
-    spectrograms at their original length.}
+  \caption{Overview of the machine learning pipeline. Every sample is
+    pre-processed separately, with constants derived on the 768 training
+    samples. The image models use the resized spectrograms; the feature models
+    use envelope features computed at the original length. Hyperparameters and
+    the final model are selected with 5-fold cross-validation on the training
+    set only. The selected settings are then fixed and evaluated on the
+    held-out test set (known persons, used once) and with leave-one-subject-out
+    (a new person).}
   \label{fig:pipeline}
 \end{figure}
 
-% ---------- Data split: stratified hold-out test set ----------
+    
+\newpage
+\subsection{Data split}
+Before any further data exploration or processing, the data is split into three roles: training, validation and test. This guarantees that choices will not be made based on test data. A test set of 20\% (192) samples is separated as shown in \autoref{fig:split-stratified}. The split is stratified on person and gesture, so every combination has the same share in the test set. This keeps the training and test data balanced. The test set will not be touched until the final evaluation of the model.
+
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}[font=\small,
       seg/.style={draw=white, line width=0.8pt},
       lab/.style={font=\scriptsize, text=white}]
-    % gesture column headers
-    \foreach \g [count=\j from 0] in {wave, pinch, swipe, click}
-      \node at ({\j*2.7+1.2}, 0.35) {\g};
-    % one bar per person x gesture: 32 training (80%) + 8 test (20%)
-    \foreach \p [count=\i from 0] in {A, B, C, D, E, F} {
-      \node[anchor=east] at (-0.1, {-\i*0.55-0.2}) {Person \p};
-      \foreach \j in {0,...,3} {
-        \filldraw[seg, fill=trainc] ({\j*2.7}, {-\i*0.55}) rectangle ++(1.92, -0.4);
-        \node[lab] at ({\j*2.7+0.96}, {-\i*0.55-0.2}) {32};
-        \filldraw[seg, fill=testc] ({\j*2.7+1.92}, {-\i*0.55}) rectangle ++(0.48, -0.4);
-        \node[lab] at ({\j*2.7+2.16}, {-\i*0.55-0.2}) {8};
+    % person column headers
+    \foreach \p [count=\j from 0] in {A, B, C, D, E, F}
+      \node at ({\j*1.85+0.85}, 0.35) {Person \p};
+    % one bar per gesture x person: 32 training (80%) + 8 test (20%)
+    \foreach \g [count=\i from 0] in {wave, pinch, swipe, click} {
+      \node[anchor=east] at (-0.1, {-\i*0.55-0.2}) {\g};
+      \foreach \j in {0,...,5} {
+        \filldraw[seg, fill=trainc] ({\j*1.85}, {-\i*0.55}) rectangle ++(1.36, -0.4);
+        \node[lab] at ({\j*1.85+0.68}, {-\i*0.55-0.2}) {32};
+        \filldraw[seg, fill=testc] ({\j*1.85+1.36}, {-\i*0.55}) rectangle ++(0.34, -0.4);
+        \node[lab] at ({\j*1.85+1.53}, {-\i*0.55-0.2}) {8};
       }
     }
     % legend
-    \filldraw[seg, fill=trainc] (0, -3.7) rectangle ++(0.4, -0.3);
-    \node[anchor=west] at (0.5, -3.85) {training set (768 samples, 80\%)};
-    \filldraw[seg, fill=testc] (5.6, -3.7) rectangle ++(0.4, -0.3);
-    \node[anchor=west] at (6.1, -3.85) {test set (192 samples, 20\%)};
+    \filldraw[seg, fill=trainc] (0, -2.6) rectangle ++(0.4, -0.3);
+    \node[anchor=west] at (0.5, -2.75) {training set (768 samples, 80\%)};
+    \filldraw[seg, fill=testc] (5.6, -2.6) rectangle ++(0.4, -0.3);
+    \node[anchor=west] at (6.1, -2.75) {test set (192 samples, 20\%)};
   \end{tikzpicture}
-  \caption{Stratified hold-out test set. Each of the 24 person--gesture
-    combinations has 40 samples, of which 8 are assigned to the test set, so
-    the test set has the same class and person balance as the full dataset.
-    The test set is separated before any pre-processing and used only once,
-    for the final evaluation.}
+  \caption{Stratified hold-out test set.}
   \label{fig:split-stratified}
 \end{figure}
+\noindent
+The training set contains the remaining 80\% (768) of the data. Every choice that is learned from data will only use this set. This includes the data exploration, noise parameters, feature choices and hyperparameter selection. Validation is done with stratified 5-fold cross validation on the training set, as shown in \autoref{fig:split-folds-a}. The training set is split into 5 balanced folds. Each model is trained on 4 folds and then evaluated on the remaining 5th fold. This is repeated 5 times so that each fold acts as validation set exactly once. The model and hyperparameters will be picked based on the highest mean validation accuracy.
 
 % ---------- Data split: cross-validation folds ----------
 \begin{figure}[H]
   \centering
-  \begin{tikzpicture}[font=\small,
-      seg/.style={draw=white, line width=0.8pt},
-      lab/.style={font=\scriptsize, text=white}]
-    % ---- (a) stratified 5-fold ----
-    \node[anchor=west, font=\small\bfseries] at (-1.3, 1.05)
-      {(a) Stratified 5-fold cross-validation: model and hyperparameter selection};
-    \draw[decorate, decoration={brace, amplitude=4pt}] (0, 0.1) -- (9.6, 0.1)
-      node[midway, above=4pt] {training set (768)};
-    \draw[decorate, decoration={brace, amplitude=4pt}] (9.65, 0.1) -- (12, 0.1)
-      node[midway, above=4pt] {test set (192)};
-    \foreach \k in {1,...,5} {
-      \pgfmathsetmacro{\y}{-(\k-1)*0.55}
-      \node[anchor=east] at (-0.1, \y-0.2) {Fold \k};
-      \foreach \s in {1,...,5} {
-        \ifnum\s=\k \def\segcol{valc}\def\seglab{validation}%
-        \else \def\segcol{trainc}\def\seglab{train}\fi
-        \filldraw[seg, fill=\segcol] ({(\s-1)*1.92}, \y) rectangle ++(1.92, -0.4);
-        \node[lab] at ({(\s-1)*1.92+0.96}, \y-0.2) {\seglab};
+  \tikzset{
+    seg/.style={draw=white, line width=0.8pt},
+    lab/.style={font=\scriptsize, text=white}}
+  % ---- (a) stratified 5-fold ----
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \resizebox{\linewidth}{!}{%
+    \begin{tikzpicture}[font=\small]
+      \draw[decorate, decoration={brace, amplitude=4pt}] (0, 0.1) -- (6.0, 0.1)
+        node[midway, above=4pt] {training set (768)};
+      \draw[decorate, decoration={brace, amplitude=4pt}] (6.05, 0.1) -- (7.5, 0.1)
+        node[midway, above=4pt] {test (192)};
+      \foreach \k in {1,...,5} {
+        \pgfmathsetmacro{\y}{-(\k-1)*0.55}
+        \node[anchor=east] at (-0.1, \y-0.2) {Fold \k};
+        \foreach \s in {1,...,5} {
+          \ifnum\s=\k \def\segcol{valc}\def\seglab{val}%
+          \else \def\segcol{trainc}\def\seglab{train}\fi
+          \filldraw[seg, fill=\segcol] ({(\s-1)*1.2}, \y) rectangle ++(1.2, -0.4);
+          \node[lab] at ({(\s-1)*1.2+0.6}, \y-0.2) {\seglab};
+        }
+        \filldraw[seg, fill=testc] (6.0, \y) rectangle ++(1.5, -0.4);
+        \node[lab] at (6.75, \y-0.2) {not used};
       }
-      \filldraw[seg, fill=testc] (9.6, \y) rectangle ++(2.4, -0.4);
-      \node[lab] at (10.8, \y-0.2) {not used};
-    }
-    % ---- (b) leave-one-subject-out ----
-    \node[anchor=west, font=\small\bfseries] at (-1.3, -3.3)
-      {(b) Leave-one-subject-out: generalisation to unseen people};
-    \foreach \p [count=\k] in {A, B, C, D, E, F} {
-      \pgfmathsetmacro{\y}{-3.75-(\k-1)*0.55}
-      \node[anchor=east] at (-0.1, \y-0.2) {Fold \k};
-      \foreach \q [count=\s] in {A, B, C, D, E, F} {
-        \ifnum\s=\k \def\segcol{valc}\else \def\segcol{trainc}\fi
-        \filldraw[seg, fill=\segcol] ({(\s-1)*1.6}, \y) rectangle ++(1.6, -0.4);
-        \node[lab] at ({(\s-1)*1.6+0.8}, \y-0.2) {Person \q};
+    \end{tikzpicture}}
+    \caption{Stratified 5-fold cross-validation: hyperparameter and model selection}
+    \label{fig:split-folds-a}
+  \end{subfigure}\hfill
+  % ---- (b) leave-one-subject-out ----
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \resizebox{\linewidth}{!}{%
+    \begin{tikzpicture}[font=\small]
+      \draw[decorate, decoration={brace, amplitude=4pt}] (0, 0.1) -- (7.5, 0.1)
+        node[midway, above=4pt] {all samples (960), 160 per person};
+      \foreach \k in {1,...,6} {
+        \pgfmathsetmacro{\y}{-(\k-1)*0.55}
+        \node[anchor=east] at (-0.1, \y-0.2) {Fold \k};
+        \foreach \q [count=\s] in {A, B, C, D, E, F} {
+          \ifnum\s=\k \def\segcol{valc}\else \def\segcol{trainc}\fi
+          \filldraw[seg, fill=\segcol] ({(\s-1)*1.25}, \y) rectangle ++(1.25, -0.4);
+          \node[lab] at ({(\s-1)*1.25+0.625}, \y-0.2) {\q};
+        }
       }
-      \filldraw[seg, fill=testc] (9.6, \y) rectangle ++(2.4, -0.4);
-      \node[lab] at (10.8, \y-0.2) {not used};
-    }
-    % legend
-    \filldraw[seg, fill=trainc] (0, -7.4) rectangle ++(0.4, -0.3);
-    \node[anchor=west] at (0.5, -7.55) {training};
-    \filldraw[seg, fill=valc] (2.6, -7.4) rectangle ++(0.4, -0.3);
-    \node[anchor=west] at (3.1, -7.55) {validation};
-    \filldraw[seg, fill=testc] (5.4, -7.4) rectangle ++(0.4, -0.3);
-    \node[anchor=west] at (5.9, -7.55) {test (held out until final evaluation)};
+    \end{tikzpicture}}
+    \caption{Leave-one-subject-out: generalisation to a new person}
+    \label{fig:split-folds-b}
+  \end{subfigure}
+
+  \medskip
+  % ---- shared legend ----
+  \begin{tikzpicture}[font=\small]
+    \filldraw[seg, fill=trainc] (0, 0) rectangle ++(0.4, -0.3);
+    \node[anchor=west] at (0.5, -0.15) {training set};
+    \filldraw[seg, fill=valc] (2.6, 0) rectangle ++(0.4, -0.3);
+    \node[anchor=west] at (3.1, -0.15) {validation set};
+    \filldraw[seg, fill=testc] (5.4, 0) rectangle ++(0.4, -0.3);
+    \node[anchor=west] at (5.9, -0.15) {test set};
   \end{tikzpicture}
-  \caption{Validation folds on the training set (768 samples). (a)~Stratified
-    5-fold cross-validation: every training sample is used for validation
-    exactly once, and each fold keeps the class balance; the model and
-    hyperparameters with the best mean validation score are selected.
-    (b)~Leave-one-subject-out: the chosen model is trained on five people and
-    validated on the sixth, which measures generalisation to people not seen
-    during training. In both schemes the test set is never used.}
+  \caption{Validation folds.}
   \label{fig:split-folds}
 \end{figure}
+\noindent
+After hyperparameter and model selection, the chosen models will be retrained on all 768 training samples. The final model is then evaluated once using the 192 test samples. The model performance measures how well the gestures of known persons are recognised.
+\\\\
+This test score will likely be higher than the accuracy for a new person that the model has not seen during training. To estimate the generalization to unseen people, the same models with the already fixed hyperparameters will be retrained using Leave-one-subject-out (LOSO). The model trains on five persons and tests on the 6th unseen person, as shown in \autoref{fig:split-folds-b}. Since the hyperparameters were selected based on all people, the accuracy will be slightly optimistic. However, it is beyond the scope of this report to retune the hyperparameters with a nested LOSO split. Instead, this step just acts as an indication of the generalization performance. LOSO is not used for any choice, so it can use all 960 samples.
+
+
 
 \newpage
 % =====================================================================
@@ -353,7 +360,41 @@ The spectrograms all share a similar structure with 800 doppler bins and a varyi
 The data needs to be made more uniform by removing noise and rescaling such that the model is prevented from learning a gesture mainly based on the background noise level. This also poses a challenge generalizing the model to more people since the model will learn person specific features with just 6 people in the training data. The gestures should be distinguished on the distribution of gesture energy over time and doppler bins.
 
 \subsection{Pre-processing}
-Since there are no invalid values in the provided dataset, no samples have to be removed. All samples will be processed in four steps: noise removal, cropping, scaling and resizing. The goal of the pre-processing is to make turn the raw data into clean spectograms of uniform dimensions, that can be used for feature extraction and model training.
+Since there are no invalid values in the provided dataset, no samples have to be removed. All samples will be processed in four steps: noise removal, cropping, scaling and resizing. The goal of the pre-processing is to turn the raw data into clean spectorgrams of uniform dimensions, that can be used for feature extraction and model training.
+
+\paragraph{Noise removal}
+As shown before in \autoref{fig:doppler_profile_persons}, the samples all have their own noise floor level. This background noise can be removed since it contains no useful information about the gesture. Because of the sample specific noise floor, the noise removal process also has to be sample specific. Clipping below a fixed threshold for example would cut into the gesture of some samples, while leaving noise in others. 
+\\\\
+The gesture mainly takes places in the bins close to zero Doppler, while the bins far away from the centre mainly consist of noise. \autoref{fig:doppler_profile_persons} shows the median levels off to a flat line. By inspection of that same figure, the outer 60 bins on each side are taken as the far bins. The median of the far bin pixels is then defined as the spectrogram's noise level. The median is well suited for this, rather than the mean, since it is less sensitive to a few bins that do contain the gesture (like the broadband stripes of the click gesture). As long as more than half of the time bins contain noise, the median gives a good estimate of the noise level.
+\\\\
+\todo{add plot to show that it doesnt really matter what far bins we take}
+Thresholding at the median would still pass half of the noise samples. Assuming complex Gaussian noise, the power per pixel $P$ is exponentially distributed with mean noise power $\mu$, so the probability that noise exceeds a threshold $p$ is 
+\begin{equation}
+  P_{\mathrm{fa}} = \Pr(P > p) = e^{-p/\mu}
+  \;\Rightarrow\; p = \mu \ln(1/P_{\mathrm{fa}}),
+\end{equation}
+with the median at $p_{50} = \mu \ln 2$. The margin above the median is then independent of the unknown noise power and set only by the chosen false-alarm probability:
+\begin{equation}
+  \Delta_{\mathrm{dB}}
+  = 10 \log_{10}\!\left(\frac{p}{p_{50}}\right)
+  = 10 \log_{10}\!\left(\frac{\ln(1/P_{\mathrm{fa}})}{\ln 2}\right).
+\end{equation}
+With $P_{\mathrm{fa}} = 10^{-3}$, i.e.\ the threshold at the 99.9th percentile of the noise, the margin becomes
+\begin{equation}
+  \Delta_{\mathrm{dB}}
+  = 10 \log_{10}\!\left(\frac{\ln 1000}{\ln 2}\right)
+  \approx 10.0~\text{dB}.
+\end{equation}
+This 99.9\% margin is a trade-off between removing more noise and preserving gesture information. For each sample, all values are clipped at the sample specific noise floor plus that fixed 10 dB margin.
+
+\paragraph{Cropping}
+Since the far bins contain mainly noise and hold little gesture information, they might as well be removed to improve the Doppler resolution when resizing the spectrogram later on. Doppler bins in which the magnitude stays below the sample specific noise threshold for 99\% of the time in 99\% of the samples are therefore removed. This results in cropping to the xx-xxx bins. A narrower crop would give a higher resolution after resizing, at the cost of removing the tails of gestures that do reach into the far bins. 
+
+\paragraph{Scaling}
+After the noise removal, each sample still has a different noise floor. The model should not learn the gestures based on this noise floor. The sample dependent noise floor should therefore be converted to a uniform noise floor. This is done using per sample scaling. The noise floor becomes zero, since it has no information and the maximum (0 dB) becomes 1.
+
+\paragraph{Resizing}
+Finally, the spectrograms have to made uniform in their dimensions so that they can be used as input for a CNN. A resolution of 128 x 128 is chosen as the output size. The spectrograms are all resized using linear interpolation. This does remove gesture duration, which did hold relevant information so that will be added as a separate feature later on.
 
 \begin{figure}[H]
   \centering
@@ -362,16 +403,6 @@ Since there are no invalid values in the provided dataset, no samples have to be
   \label{fig:prepro_steps}
 \end{figure}
 
-\paragraph{Noise removal} As shown before in \autoref{fig:doppler_profile_persons}, the samples all have their own noise floor level. This background noise can be removed since it contains no useful information about the gesture. Because of the sample specific noise floor, the noise removal process also has to be sample specific. A fixed clip for example would leave cut into the gesture of some samples, while leaving noise in others. Since the gesture mainly takes places in the bins close to zero Doppler, the bins far away from the centre mainly consist of noise. Therefore, the sample noise floor level is determined using the median value of the far bins. The median is well suited for this, rather than the mean, since it is less sensitive to a few bins that contain the gesture. As long as more than half of the time bins contain noise, the median gives a good estimate of the noise level. The far bins range is chosen to be Doppler bins 0-50 and 750-800 based on TODO why these bins? Since the far bins contain mostly noise, using the median as noise floor would only remove half of the noise. Therefore, a margin is added on top of the noise floor such that 99\% of the noise is removed. This margin is a trade-off between removing more noise and preserving gesture information. For each sample, all values are clipped at the sample specific noise floor plus that fixed margin.
-
-\paragraph{Cropping}
-Since the far bins contain mainly noise and hold little gesture information, they might as well be removed to improve the Doppler resolution when resizing the spectrogram later on. However, only bins that do not contain gesture information should be removed. For 99\% of the samples, the gesture energy lies within the bins 100-800. A narrower crop would give a higher resolution after resizing, at the cost of removing the tails of gestures that do reach into the far bins.
-
-\paragraph{Scaling}
-After the noise removal, each sample still has a different noise floor. The model should not learn the gestures based on this noise floor. The sample dependent noise floor should therefore be converted to a uniform noise floor. This is done using per sample scaling. The noise floor becomes zero, since it has no information and the maximum (0 dB) becomes 1.
-
-\paragraph{Resizing}
-Finally, the spectrograms have to made uniform in their dimensions so that they can be used as input for a CNN. A resolution of 128 x 128 is chosen as the output size. The spectrograms are all resized using linear interpolation. This does remove gesture duration, which did hold relevant information so that will be added as a separate feature later on.
 
 
 % \placeholder{%
@@ -395,24 +426,24 @@ Finally, the spectrograms have to made uniform in their dimensions so that they 
 
 
 
-\begin{figure}[H]
-  \centering
-  \begin{subfigure}{\linewidth}
-    \centering
-    \includegraphics[width=\linewidth]{figures/noise_far_bins.pdf}
-    \caption{Fraction of training samples with gesture energy at a Doppler distance of at least $K$ bins. Left: all time frames; right: broadband click stripes left out. The dashed line marks the far-bin boundary $|k| = 340$.}
-    \label{fig:noise_far_bins}
-  \end{subfigure}
-  \\[4pt]
-  \begin{subfigure}{\linewidth}
-    \centering
-    \includegraphics[width=\linewidth]{figures/noise_margin.pdf}
-    \caption{Left: distribution of far-bin pixels relative to each sample's noise level, with the Rayleigh-noise theory. Right: share of noise pixels that remain above the threshold as a function of the margin.}
-    \label{fig:noise_margin}
-  \end{subfigure}
-  \caption{Choice of the far bins (a) and the noise margin (b), derived on the training samples.}
-  \label{fig:noise_params}
-\end{figure}
+% \begin{figure}[H]
+%   \centering
+%   \begin{subfigure}{\linewidth}
+%     \centering
+%     \includegraphics[width=\linewidth]{figures/noise_far_bins.pdf}
+%     \caption{Fraction of training samples with gesture energy at a Doppler distance of at least $K$ bins. Left: all time frames; right: broadband click stripes left out. The dashed line marks the far-bin boundary $|k| = 340$.}
+%     \label{fig:noise_far_bins}
+%   \end{subfigure}
+%   \\[4pt]
+%   \begin{subfigure}{\linewidth}
+%     \centering
+%     \includegraphics[width=\linewidth]{figures/noise_margin.pdf}
+%     \caption{Left: distribution of far-bin pixels relative to each sample's noise level, with the Rayleigh-noise theory. Right: share of noise pixels that remain above the threshold as a function of the margin.}
+%     \label{fig:noise_margin}
+%   \end{subfigure}
+%   \caption{Choice of the far bins (a) and the noise margin (b), derived on the training samples.}
+%   \label{fig:noise_params}
+% \end{figure}
 
 \subsection{Feature Extraction and Selection}
 \placeholder{%
@@ -463,6 +494,7 @@ Summarise the outcome of Task~1: final input representation(s) fed to each
 model, final feature set and its size, key plots showing class separability,
 and a short discussion of what worked and what did not.}
 
+\newpage
 % =====================================================================
 \section{Task 2: Model Development, Validation and Comparison}
 \label{sec:task2}
@@ -691,7 +723,7 @@ persons but more complex. The CNN meets the deep-network requirement and clearly
 outperforms the other image model, but stays below the feature models; more
 persons would be needed for it to generalise better.
 
-
+\newpage
 % =====================================================================
 \section{Conclusions}
 \label{sec:conclusions}

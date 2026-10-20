@@ -3,7 +3,8 @@
 1. Noise removal: one noise level per clip, the median of the far Doppler bins the hand
    never reaches, applied flat across Doppler. Every pixel not more than MARGIN_DB above
    that level is set to the threshold (noise level + margin).
-2. Doppler crop: keep the bins between the two far-bin regions, |bin - 400| < 340.
+2. Doppler crop: keep the bins |bin - 400| < 310, where at least 1% of all training
+   pixels lie above the threshold.
 3. Scaling: threshold -> 0, maximum -> 1.
 4. Resize: linear interpolation to OUT_SHAPE (Doppler x time).
 
@@ -25,12 +26,14 @@ ZERO_DOPPLER = N_DOPPLER // 2
 FAR_OFFSET = 340
 FAR_BINS = np.r_[0:ZERO_DOPPLER - FAR_OFFSET, ZERO_DOPPLER + FAR_OFFSET:N_DOPPLER]
 
-# Margin above the median noise level. Far-bin noise (stripe frames left out) P99 = 8.3 dB,
-# P99.9 = 10.2 dB, so 10 dB leaves ~0.13% noise speckle.
+# Margin above the median noise level: 99.9th percentile of complex Gaussian noise,
+# 10 log10(ln(1000) / ln 2) = 10.0 dB, so a noise pixel survives with probability 0.1%.
 MARGIN_DB = 10.0
 
-# Doppler crop: everything outside is the noise-only far region used for the level.
-DOPPLER_CROP = (ZERO_DOPPLER - FAR_OFFSET, ZERO_DOPPLER + FAR_OFFSET)   # bins 60-739
+# Doppler crop: outside |bin - 400| < 310 less than 1% of all training pixels per bin
+# lie above the threshold.
+CROP_OFFSET = 310
+DOPPLER_CROP = (ZERO_DOPPLER - CROP_OFFSET, ZERO_DOPPLER + CROP_OFFSET)   # bins 90-709
 
 OUT_SHAPE = (128, 128)      # (Doppler, time) input size for the CNN
 
@@ -49,7 +52,7 @@ def remove_noise(spec, margin_db=MARGIN_DB):
 def preprocess_clip(spec, margin_db=MARGIN_DB, crop=DOPPLER_CROP, out_shape=OUT_SHAPE):
     """Raw spectrogram (dB, 800 x n_time) -> cleaned, cropped image with values in [0, 1].
 
-    out_shape=None skips the resize and keeps the cropped size (680 x n_time).
+    out_shape=None skips the resize and keeps the cropped size (620 x n_time).
     """
     # 1. Noise removal (level from the full 800 bins, before cropping)
     x, threshold = remove_noise(spec, margin_db)
