@@ -446,44 +446,90 @@ Finally, the spectrograms have to made uniform in their dimensions so that they 
 % \end{figure}
 
 \subsection{Feature Extraction and Selection}
-\placeholder{%
-Optional in the assignment but worth \textbf{15\%} of the rubric -- argue why
-you do/do not use explicit features (e.g.\ DNN on raw images vs.\ handcrafted
-features for classical models). Inspiration suggested by the lecturer:
-\begin{enumerate}
-  \item \textbf{Envelope features} -- Amin, Zeng \& Shan, \emph{Hand Gesture
-        Recognition based on Radar Micro-Doppler Signature Envelopes}, IEEE
-        RadarConf 2019 \cite{amin2019}: upper/lower/central envelopes of the
-        spectrogram.
-  \item \textbf{Centroid and bandwidth} -- Fioranelli, Ritchie \& Griffiths,
-        IET RSN 2016 \cite{fioranelli2016}, Sec.~3.2: Doppler centroid and
-        bandwidth over time and their statistical moments (note: originally for
-        a different task).
-  \item \textbf{Chebyshev moments} -- Pallotta et al., IEEE MetroAeroSpace 2021
-        \cite{pallotta2021}.
-\end{enumerate}
-Other options: statistical features (mean, variance, skewness, kurtosis,
-energy, entropy), PCA, image-texture features. Explain:
-\begin{itemize}
-  \item Feature definitions (equations where useful).
-  \item Feature selection / dimensionality reduction method (e.g.\ correlation
-        analysis, mutual information, recursive feature elimination, PCA
-        explained variance) and why.
-  \item Results: feature distributions per class, separability plots
-        (e.g.\ pair plots, t-SNE/PCA scatter), feature importance ranking.
-\end{itemize}}
+\label{sec:features}
+The CNN learns its own features from the resized spectrograms. The classical models, however, would have to work with $128 \times 128 = 16384$ pixels while only 768 training samples are available, and the resizing removes the gesture duration. The feature models therefore get a compact description of the gesture outline instead, based on the micro-Doppler envelopes of Amin et al.\ \cite{amin2019}. All features are computed on the spectrograms at their original length, so the duration is preserved.
+
+\subsubsection{Envelope extraction}
+\label{sec:envelopes}
+
+\paragraph{Gesture power and gesture span}
+The envelopes are computed on the gesture power $P(d, n)$: the linear power above the sample's own noise floor, using the same noise removal as in \autoref{sec:task1}, so that pure noise has power zero. Here $d$ is the Doppler bin relative to zero Doppler (positive is motion towards the radar) and $n$ the time bin. The Doppler axis is not cropped, since nothing is resized here. The paper uses 1-second windows that each contain one complete gesture. The DopNet recordings have different lengths with silence before and after the gesture, so only the gesture span is kept: from the first to the last time bin with at least 5\% of the power of the strongest time bin.
+
+\paragraph{Step 1: effective bandwidth}
+The spectrogram is split into a positive and a negative Doppler half. For each half the gesture power is summed over time and, counting outward from zero Doppler, the effective bandwidth ends where 99.9\% of the energy of that half is reached. This Doppler bin is the maximum positive Doppler $f_p$ or maximum negative Doppler $f_n$ of the gesture. The paper does not define the effective bandwidth; a fixed energy share is a common choice. Because the share is taken on linear power, a lobe 20~dB below the peak carries only about 1\% of the energy, so a share of 99\% would cut off the outer lobes of the gesture, while 99.9\% includes them. Isolated noise cells far from zero Doppler carry almost no energy and stay outside.
+
+\paragraph{Steps 2 and 3: energy and threshold}
+In every time bin the energy of each half is
+\begin{equation}
+  E_U(n) = \sum_{d > 0} P(d, n), \qquad E_L(n) = \sum_{d < 0} P(d, n),
+\end{equation}
+and the threshold is a fixed fraction of it, $T_U(n) = \sigma_U E_U(n)$ and $T_L(n) = \sigma_L E_L(n)$ with $\sigma < 1$. As in the paper, $\sigma$ is chosen per sample and per half such that the threshold lies exactly at the maximum Doppler in the time bin $n_p$ where that Doppler bin is strongest:
+\begin{equation}
+  \sigma_U = \frac{P(f_p, n_p)}{E_U(n_p)}, \qquad n_p = \arg\max_n P(f_p, n),
+\end{equation}
+and likewise $\sigma_L$ with $f_n$. In every other time bin the threshold scales with the energy of that time bin.
+
+\paragraph{Step 4: envelope}
+The envelope is the outermost Doppler bin that still reaches the threshold:
+\begin{equation}
+  e_U(n) = \max\{d > 0 : P(d, n) \geq T_U(n)\}, \qquad
+  e_L(n) = \min\{d < 0 : P(d, n) \geq T_L(n)\}.
+\end{equation}
+Time bins without energy in a half get envelope 0.
+
+\paragraph{Step 5: feature vector}
+As in the paper, the envelopes are concatenated into one feature vector, $e = [e_U, e_L]$. The paper's samples all have the same length; the DopNet gesture spans range from 51 to 376 time bins. Each envelope is therefore placed in a fixed window of 358 time bins, starting at the gesture start and zero-padded after the gesture end. 99\% of the training gesture spans fit in this window; the 7 longer training samples (and 1 test sample) are cut. Nothing is resampled, so the gesture duration remains visible in the vector as the point where the zeros begin.
+
+\autoref{fig:envelope_steps} shows all steps for one wave sample, with a maximum Doppler of $+282$ and $-269$ bins. The envelopes follow the swings of the wave: at the peak of each swing they reach the outer lobes, and between two swings, when the hand turns, they fall back towards zero Doppler. \autoref{fig:envelope_examples} shows the envelopes for one sample of each gesture. The extent of the envelopes differs clearly between the gestures: the pinch stays within about $\pm 60$ Doppler bins, while the wave swings much further out. The figure also shows the weak point of a threshold per time bin. In time bins with little gesture energy, such as a pause between two swings or the end of the gesture, $E(n)$ and therefore the threshold are so low that single noise cells far from zero Doppler pass it, and the envelope jumps (the wave around time bin 165 and the end of the swipe). The large excursion of the click is not noise but its short broadband stripe, which covers almost the whole Doppler axis.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{figures/amin_envelope_steps.pdf}
+  \caption{Envelope extraction for one wave sample from the training set. Left: gesture power with the gesture span (vertical dashed lines), the effective bandwidth (horizontal dashed lines) and the envelopes $e_U$ (white) and $e_L$ (black); time bin 0 is the gesture start. Right: the resulting feature vector $e = [e_U, e_L]$, zero-padded after the end of the gesture.}
+  \label{fig:envelope_steps}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{figures/amin_envelopes_examples.pdf}
+  \caption{Raw spectrograms of one training sample per gesture, with the envelopes $e_U$ (white) and $e_L$ (black) over the gesture span.}
+  \label{fig:envelope_examples}
+\end{figure}
+
+\subsubsection{Available features}
+\label{sec:feature_list}
+From the envelopes of \autoref{sec:envelopes}, five groups of features are computed for every sample (\autoref{tab:features}). The first two groups are those of the paper; the other three are compact versions of the same envelopes, added for the classical models.
+
+\paragraph{Window envelopes}
+The feature vector $e = [e_U, e_L]$ of step 5, used by the paper as its main feature set. It keeps the full time resolution and the gesture duration, but it is large (716 values) compared to the 768 training samples, and two samples of the same gesture performed at a different speed do not line up in time.
+
+\paragraph{Empirical features}
+The paper also uses three empirical features as a baseline (Sec.~IV-A of \cite{amin2019}): the length of the gesture span $T = t_e - t_s$ in time bins, the ratio of the maximum Doppler frequencies $R = |f_p / f_n|$, which describes the balance between motion towards and away from the radar, and the Doppler bandwidth $B_w = |f_p| + |f_n|$.
+
+\paragraph{Time-normalised envelopes}
+Each envelope is divided into 16 equal segments of the gesture span, and every segment is replaced by its mean. Gestures of different speed then line up, while the length is kept separately in $T$. Averaging, rather than sampling single points, lets every time bin count and damps the single-bin jumps of the envelopes. With 16 segments, even the shortest gesture span (51 time bins) still has about three time bins per segment.
+
+\paragraph{Envelope statistics}
+Four statistics summarise each envelope magnitude, $|e_U(n)|$ and $|e_L(n)|$, over the gesture span: the mean, standard deviation and median describe its level and variation, and the 90th percentile is a robust maximum that a few jumps do not move.
+
+\paragraph{Recording length}
+The length of the whole recording in time bins, before the gesture span is cut out.
 
 \begin{table}[H]
   \centering
-  \caption{Extracted features (example layout).}
+  \caption{Features computed for every sample. $e_U$ and $e_L$ are the positive and negative envelope, $f_p$ and $f_n$ the maximum positive and negative Doppler.}
   \label{tab:features}
-  \begin{tabular}{@{}llc@{}}
+  \begin{tabular}{@{}lp{0.58\linewidth}r@{}}
     \toprule
-    Feature group & Description & \# features \\
+    Group & Description & \# features \\
     \midrule
-    Envelope        & \ldots & -- \\
-    Centroid/bandwidth & \ldots & -- \\
-    Chebyshev moments  & \ldots & -- \\
+    Window envelopes          & $e = [e_U, e_L]$, 358 time bins each, zero-padded \cite{amin2019} & 716 \\
+    Empirical features        & length $T$, peak ratio $R = |f_p / f_n|$, bandwidth $B_w = |f_p| + |f_n|$ \cite{amin2019} & 3 \\
+    Time-normalised envelopes & $e_U$ and $e_L$, mean over 16 equal segments of the gesture span & 32 \\
+    Envelope statistics       & mean, std, median, 90th percentile of $|e_U|$ and $|e_L|$ & 8 \\
+    Recording length          & length of the whole recording & 1 \\
+    \midrule
+    Total                     & & 760 \\
     \bottomrule
   \end{tabular}
 \end{table}
