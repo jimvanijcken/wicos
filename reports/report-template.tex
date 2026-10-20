@@ -360,14 +360,14 @@ The spectrograms all share a similar structure with 800 doppler bins and a varyi
 The data needs to be made more uniform by removing noise and rescaling such that the model is prevented from learning a gesture mainly based on the background noise level. This also poses a challenge generalizing the model to more people since the model will learn person specific features with just 6 people in the training data. The gestures should be distinguished on the distribution of gesture energy over time and doppler bins.
 
 \subsection{Pre-processing}
-Since there are no invalid values in the provided dataset, no samples have to be removed. All samples will be processed in four steps: noise removal, cropping, scaling and resizing. The goal of the pre-processing is to turn the raw data into clean spectorgrams of uniform dimensions, that can be used for feature extraction and model training.
+Since there are no invalid values in the provided dataset, no samples have to be removed. All samples will be processed in four steps: noise removal, cropping, scaling and resizing. The goal of the pre-processing is to turn the raw data into clean spectrograms of uniform dimensions, that can be used for feature extraction and model training.
 
 \paragraph{Noise removal}
 As shown before in \autoref{fig:doppler_profile_persons}, the samples all have their own noise floor level. This background noise can be removed since it contains no useful information about the gesture. Because of the sample specific noise floor, the noise removal process also has to be sample specific. Clipping below a fixed threshold for example would cut into the gesture of some samples, while leaving noise in others. 
 \\\\
-The gesture mainly takes places in the bins close to zero Doppler, while the bins far away from the centre mainly consist of noise. \autoref{fig:doppler_profile_persons} shows the median levels off to a flat line. By inspection of that same figure, the outer 60 bins on each side are taken as the far bins. The median of the far bin pixels is then defined as the spectrogram's noise level. The median is well suited for this, rather than the mean, since it is less sensitive to a few bins that do contain the gesture (like the broadband stripes of the click gesture). As long as more than half of the time bins contain noise, the median gives a good estimate of the noise level.
+The gesture mainly takes place in the bins close to zero Doppler, while the bins far away from the centre mainly consist of noise. \autoref{fig:doppler_profile_persons} shows the median levels off to a flat line. By inspection of that same figure, the outer 60 bins on each side are taken as the far bins. The median of the far bin pixels is then defined as the spectrogram's noise level. The median is well suited for this, rather than the mean, since it is less sensitive to a few bins that do contain the gesture (like the broadband stripes of the click gesture). As long as more than half of the far-bin pixels contain noise, the median gives a good estimate of the noise level.
 \\\\
-\todo{add plot to show that it doesnt really matter what far bins we take}
+% \todo{add plot to show that it doesnt really matter what far bins we take}
 Thresholding at the median would still pass half of the noise samples. Assuming complex Gaussian noise, the power per pixel $P$ is exponentially distributed with mean noise power $\mu$, so the probability that noise exceeds a threshold $p$ is 
 \begin{equation}
   P_{\mathrm{fa}} = \Pr(P > p) = e^{-p/\mu}
@@ -379,7 +379,7 @@ with the median at $p_{50} = \mu \ln 2$. The margin above the median is then ind
   = 10 \log_{10}\!\left(\frac{p}{p_{50}}\right)
   = 10 \log_{10}\!\left(\frac{\ln(1/P_{\mathrm{fa}})}{\ln 2}\right).
 \end{equation}
-With $P_{\mathrm{fa}} = 10^{-3}$, i.e.\ the threshold at the 99.9th percentile of the noise, the margin becomes
+As seen in \autoref{fig:noise_margin}, the far-bin pixels can indeed be modelled as Gaussian noise. The tail above 10 dB is explained by the broadband stripes in the click gesture. With $P_{\mathrm{fa}} = 10^{-3}$, i.e.\ the threshold at the 99.9th percentile of the noise, the margin becomes
 \begin{equation}
   \Delta_{\mathrm{dB}}
   = 10 \log_{10}\!\left(\frac{\ln 1000}{\ln 2}\right)
@@ -387,14 +387,34 @@ With $P_{\mathrm{fa}} = 10^{-3}$, i.e.\ the threshold at the 99.9th percentile o
 \end{equation}
 This 99.9\% margin is a trade-off between removing more noise and preserving gesture information. For each sample, all values are clipped at the sample specific noise floor plus that fixed 10 dB margin.
 
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}{0.49\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/noise_margin.pdf}
+    \caption{Far-bin pixels relative to each sample's noise level, compared with the complex Gaussian noise theory.}
+    \label{fig:noise_margin}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}{0.49\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/crop_rule.pdf}
+    \caption{Share of all training pixels above the noise threshold per Doppler bin. Bins below 1\,\% are removed by the crop.}
+    \label{fig:crop_rule}
+  \end{subfigure}
+  \caption{Choice of the noise margin (a) and the Doppler crop (b), derived on the training samples.}
+  \label{fig:noise_params}
+\end{figure}
+
+
 \paragraph{Cropping}
-Since the far bins contain mainly noise and hold little gesture information, they might as well be removed to improve the Doppler resolution when resizing the spectrogram later on. Doppler bins in which the magnitude stays below the sample specific noise threshold for 99\% of the time in 99\% of the samples are therefore removed. This results in cropping to the xx-xxx bins. A narrower crop would give a higher resolution after resizing, at the cost of removing the tails of gestures that do reach into the far bins. 
+Since the bins far from zero Doppler contain mainly noise and hold little gesture information, they might as well be removed to improve the Doppler resolution when resizing the spectrogram later on. For each Doppler bin, the pixels of all training samples are taken together, and the share that lies above the sample-specific noise threshold is computed (\autoref{fig:crop_rule}). This share decreases steadily away from zero Doppler. A bin is removed if less than 1\% of its pixels exceed the threshold. With a symmetric crop around zero Doppler, this keeps bins 90--709 (620 bins). A narrower crop would give a higher resolution after resizing, at the cost of removing the tails of gestures that do reach into the far bins. 
 
 \paragraph{Scaling}
-After the noise removal, each sample still has a different noise floor. The model should not learn the gestures based on this noise floor. The sample dependent noise floor should therefore be converted to a uniform noise floor. This is done using per sample scaling. The noise floor becomes zero, since it has no information and the maximum (0 dB) becomes 1.
+After the noise removal, each sample still has a different noise floor. The model should not learn the gestures based on this noise floor. The sample dependent noise floor should therefore be converted to a uniform noise floor. This is done using per sample scaling. The noise threshold (median + margin) becomes zero, since it has no information and the maximum (0 dB) becomes 1.
 
 \paragraph{Resizing}
-Finally, the spectrograms have to made uniform in their dimensions so that they can be used as input for a CNN. A resolution of 128 x 128 is chosen as the output size. The spectrograms are all resized using linear interpolation. This does remove gesture duration, which did hold relevant information so that will be added as a separate feature later on.
+Finally, the spectrograms have to be made uniform in their dimensions so that they can be used as input for a CNN. A resolution of 128 x 128 is chosen as the output size. The spectrograms are all resized using linear interpolation. This does remove gesture duration, which did hold relevant information so that will be added as a separate feature later on.
 
 \begin{figure}[H]
   \centering
@@ -404,48 +424,37 @@ Finally, the spectrograms have to made uniform in their dimensions so that they 
 \end{figure}
 
 
-
 % \placeholder{%
-% Describe and \emph{justify} each step chosen (the assignment lists data
-% cleaning, normalisation, standardisation of spectrograms treated as images).
-% Examples to consider:
+% Optional in the assignment but worth \textbf{15\%} of the rubric -- argue why
+% you do/do not use explicit features (e.g.\ DNN on raw images vs.\ handcrafted
+% features for classical models). Inspiration suggested by the lecturer:
+% \begin{enumerate}
+%   \item \textbf{Envelope features} -- Amin, Zeng \& Shan, \emph{Hand Gesture
+%         Recognition based on Radar Micro-Doppler Signature Envelopes}, IEEE
+%         RadarConf 2019 \cite{amin2019}: upper/lower/central envelopes of the
+%         spectrogram.
+%   \item \textbf{Centroid and bandwidth} -- Fioranelli, Ritchie \& Griffiths,
+%         IET RSN 2016 \cite{fioranelli2016}, Sec.~3.2: Doppler centroid and
+%         bandwidth over time and their statistical moments (note: originally for
+%         a different task).
+%   \item \textbf{Chebyshev moments} -- Pallotta et al., IEEE MetroAeroSpace 2021
+%         \cite{pallotta2021}.
+% \end{enumerate}
+% Other options: statistical features (mean, variance, skewness, kurtosis,
+% energy, entropy), PCA, image-texture features. Explain:
 % \begin{itemize}
-%   \item Data cleaning: handling NaN/inf, removing corrupted samples.
-%   \item Handling variable time length: cropping, zero/min-padding, resizing /
-%         interpolation to a fixed size.
-%   \item Dynamic-range clipping (e.g.\ floor at max$-X$\,dB) to suppress noise.
-%   \item Normalisation / standardisation (per-sample min--max, global z-score
-%         fitted on training data only -- avoid leakage).
-%   \item Optional: Doppler cropping around zero velocity, denoising, data
-%         augmentation for the DNN (time shift, noise) -- training set only.
-% \end{itemize}
-% Report the effect of each choice (figure before/after, and/or ablation
-% showing impact on validation accuracy).}
-% TODO why we picked zoom and not zero padding or interpolation
-
-
-
-
-% \begin{figure}[H]
-%   \centering
-%   \begin{subfigure}{\linewidth}
-%     \centering
-%     \includegraphics[width=\linewidth]{figures/noise_far_bins.pdf}
-%     \caption{Fraction of training samples with gesture energy at a Doppler distance of at least $K$ bins. Left: all time frames; right: broadband click stripes left out. The dashed line marks the far-bin boundary $|k| = 340$.}
-%     \label{fig:noise_far_bins}
-%   \end{subfigure}
-%   \\[4pt]
-%   \begin{subfigure}{\linewidth}
-%     \centering
-%     \includegraphics[width=\linewidth]{figures/noise_margin.pdf}
-%     \caption{Left: distribution of far-bin pixels relative to each sample's noise level, with the Rayleigh-noise theory. Right: share of noise pixels that remain above the threshold as a function of the margin.}
-%     \label{fig:noise_margin}
-%   \end{subfigure}
-%   \caption{Choice of the far bins (a) and the noise margin (b), derived on the training samples.}
-%   \label{fig:noise_params}
-% \end{figure}
+%   \item Feature definitions (equations where useful).
+%   \item Feature selection / dimensionality reduction method (e.g.\ correlation
+%         analysis, mutual information, recursive feature elimination, PCA
+%         explained variance) and why.
+%   \item Results: feature distributions per class, separability plots
+%         (e.g.\ pair plots, t-SNE/PCA scatter), feature importance ranking.
+% \end{itemize}}
 
 \subsection{Feature Extraction and Selection}
+\todo{where should PCA be?}
+\todo{this section is AI written, rewrite!}
+
 \label{sec:features}
 The CNN learns its own features from the resized spectrograms. The classical models, however, would have to work with $128 \times 128 = 16384$ pixels while only 768 training samples are available, and the resizing removes the gesture duration. The feature models therefore get a compact description of the gesture outline instead, based on the micro-Doppler envelopes of Amin et al.\ \cite{amin2019}. All features are computed on the spectrograms at their original length, so the duration is preserved.
 
@@ -533,6 +542,10 @@ The length of the whole recording in time bins, before the gesture span is cut o
     \bottomrule
   \end{tabular}
 \end{table}
+
+
+
+
 
 \subsection{Task 1 Results}
 \placeholder{%
