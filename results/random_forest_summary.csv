@@ -1,2 +1,0 @@
-model,lopo_accuracy_mean,lopo_accuracy_std,lopo_f1_mean,lopo_f1_std,random_split_accuracy,random_split_f1
-Random forest (features),0.6802083333333333,0.16300003195296212,0.6523707123781275,0.20740960094142635,0.90625,0.9066104272778721

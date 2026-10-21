@@ -1,2 +1,0 @@
-model,lopo_accuracy_mean,lopo_accuracy_std,lopo_f1_mean,lopo_f1_std,random_split_accuracy,random_split_f1
-"SVM RBF (images, PCA)",0.5656249999999999,0.12684574785935868,0.5328914165984973,0.1396138424263575,0.96875,0.9688517694311767
