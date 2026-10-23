@@ -46,6 +46,7 @@
 \usepackage{wrapfig}
 \usepackage{ragged2e}
 \usepackage{todonotes}
+\usepackage{float}
 
 \usetikzlibrary{decorations.pathreplacing,arrows.meta}
 
@@ -58,6 +59,22 @@
 \usepackage{enumitem}
 \usepackage[hidelinks]{hyperref}
 \usepackage{cleveref}
+
+% ---------- citations as footnotes (no reference list) ----------
+% The first \cite of a source gives a footnote with the full reference; later
+% \cite's of the same source repeat that footnote number (also inside tables).
+\makeatletter
+\newcommand{\citetext}[2]{\@namedef{citetext@#1}{#2}}
+\renewcommand{\cite}[1]{\unskip%
+  \@ifundefined{citeused@#1}%
+    {\global\@namedef{citeused@#1}{}\footnote{\@nameuse{citetext@#1}\label{fn:#1}}}%
+    {\textsuperscript{\ref{fn:#1}}}}
+\makeatother
+\citetext{dopnet}{UCL Radar Group, ``DopNet radar hand-gesture dataset,''
+  \url{https://github.com/UCLRadarGroup/DopNet}.}
+\citetext{amin2019}{M.~G. Amin, Z.~Zeng, and T.~Shan, ``Hand gesture recognition
+  based on radar micro-Doppler signature envelopes,'' in \emph{Proc.\ IEEE Radar
+  Conf.}, 2019, pp.~1--6.}
 
 % ---------- placeholder box (delete usages before submission) ----------
 \newtcolorbox{placeholderbox}{colback=blue!4!white,colframe=blue!25!gray,
@@ -90,20 +107,37 @@ Huib Maas \\ \texttt{h.a.w.maas@student.tudelft.nl}\\ student no.\ 5858038}
 % =====================================================================
 \section*{Summary}
 % =====================================================================
-\placeholder{%
-\textbf{Hard limit: less than 200 words.} Self-contained abstract of the whole
-project:
-\begin{itemize}
-  \item Problem: 4-class radar hand-gesture recognition (wave, pinch, swipe,
-        click) from micro-Doppler spectrograms of the DopNet dataset (UCL Radar
-        Group), 6 subjects (A--F), 40 samples per gesture per person.
-  \item Main pre-processing / feature-extraction choices (Task~1).
-  \item Models compared (incl.\ the mandatory deep neural network) and how they
-        were validated (Task~2).
-  \item Key quantitative result(s) on the unseen test data (e.g.\ accuracy,
-        macro-F1) and the selected final model.
-  \item One-sentence main take-away.
-\end{itemize}}
+% \placeholder{%
+% \textbf{Hard limit: less than 200 words.} Self-contained abstract of the whole
+% project:
+% \begin{itemize}
+%   \item Problem: 4-class radar hand-gesture recognition (wave, pinch, swipe,
+%         click) from micro-Doppler spectrograms of the DopNet dataset (UCL Radar
+%         Group), 6 subjects (A--F), 40 samples per gesture per person.
+%   \item Main pre-processing / feature-extraction choices (Task~1).
+%   \item Models compared (incl.\ the mandatory deep neural network) and how they
+%         were validated (Task~2).
+%   \item Key quantitative result(s) on the unseen test data (e.g.\ accuracy,
+%         macro-F1) and the selected final model.
+%   \item One-sentence main take-away.
+% \end{itemize}}
+
+This report classifies four radar hand gestures (wave, pinch, swipe and click)
+from the micro-Doppler spectrograms of the DopNet dataset: six persons, 40
+samples per gesture and person. A test set of 20\% is separated first. Each
+spectrogram is pre-processed separately: the noise is removed with a threshold
+10\,dB above the noise level of the far Doppler bins, the Doppler axis is
+cropped and the values are scaled to $[0, 1]$. The models use either the
+spectrograms resized to $128 \times 128$ pixels or the micro-Doppler envelope
+features of Amin et al. Logistic regression, an SVM and a random forest are
+trained on the features, and an SVM on principal components and a
+convolutional neural network (CNN) on the images. Models and hyperparameters
+are chosen with 5-fold cross-validation on the training set, and
+leave-one-subject-out (LOSO) shows how they generalise to a new person. A CNN
+with five convolution blocks is the final model, with a validation accuracy of
+0.967 and a test accuracy of 0.948 (macro-F1 0.948). For a new person its
+accuracy drops to 0.74, the level of the feature models, so more persons are
+needed to recognise a gesture regardless of who performs it.
 
 
 
@@ -115,17 +149,18 @@ project:
 \section{Machine Learning Pipeline}
 \label{sec:pipeline}
 % =====================================================================
-The data comes from the DopNet dataset published by the UCL Radar Group \cite{dopnet}. It has been recorded using an Ancortek 24 GHz FMCW radar with a bandwidth of 750 MHz. The recorded samples are micro Doppler spectrograms that show the radar magnitude as a function of time and Doppler frequency. The Doppler frequency is proportional to the radial velocity of the measured moving object. Movement away from the radar generates a positive Doppler shift, while movement towards the radar generates a negative Doppler shift.
+The data comes from the DopNet dataset published by the UCL Radar Group \cite{dopnet}. It has been recorded using an Ancortek 24 GHz FMCW radar with a bandwidth of 750 MHz. The recorded samples are micro Doppler spectrograms that show the radar magnitude as a function of time and Doppler frequency. The Doppler frequency is proportional to the radial velocity of the measured moving object. Movement towards the radar generates a positive Doppler shift, while movement away from the radar generates a negative Doppler shift.
 \\\\
-The used dataset contains 960 labelled samples of different gestures made with a human hand. Each sample is provided as a CSV file, labelled with it's gesture, person and repetition. There are 4 gestures (wave, pinch, swipe and click) performed by 6 persons. The measurement for each combination has been repeated 40 times, resulting in a perfectly balanced dataset.
+The used dataset contains 960 labelled samples of different gestures made with a human hand. Each sample is provided as a CSV file, labelled with its gesture, person and repetition. There are 4 gestures (wave, pinch, swipe and click) performed by 6 persons. The measurement for each combination has been repeated 40 times, resulting in a perfectly balanced dataset.
 \\\\
 Each sample has 800 Doppler bins, where zero Doppler is in the centre at bin 400. The dataset does not contain NaN or infinite values. The magnitude values have already been normalized to each sample's maximum at 0 dB. The goal of this project is to train a model that can classify the 4 gestures based on their spectrograms. The main model will focus on recognising gestures only from people it has seen before. The generalization of the chosen models to new people will also be tested, but that is not the primary objective for this report.
 
-
 \subsection{Pipeline}
-\todo{the pipline paragraph is AI written, needs to be rewritten and checked.}
-\todo{Discuss the pipeline with Huib. Currently model in tuned using LOSO, i would tune it with 5 fold cv and then just evaluate LOSO at the end. Additionally the 35 features dont exist, we will only use envelopes because we only have time to implement a single paper.}
-\Cref{fig:pipeline} gives an overview. Each spectrogram is first pre-processed separately: the background noise is removed, the Doppler axis is cropped to the bins that can contain the gesture and the values are scaled to $[0, 1]$ (\cref{sec:preprocessing}). The constants of these steps are derived on the training samples only. The pre-processed data is then used in two forms. The image models, a convolutional neural network (CNN) and an SVM on principal components (SVM + PCA), use the spectrograms resized to $128 \times 128$ pixels. The feature models, logistic regression (LR), an SVM and a random forest (RF), use 35 envelope features computed on the spectrograms at their original length, so that the gesture duration is preserved (\cref{sec:features}). Feature standardisation and PCA are part of a scikit-learn \texttt{Pipeline}, so they are fitted on the training folds only. The hyperparameters of every model are tuned with a grid search, and the models are compared on accuracy, macro-averaged F1 score and confusion matrices (\cref{sec:task2}).
+\Cref{fig:pipeline} gives an overview of the pipeline. First, the 960 samples are split into a training set of 768 samples and a test set of 192 samples (\cref{sec:split}). Every spectrogram is then pre-processed separately through noise removal, cropping and scaling (\cref{sec:task1}).
+\\\\
+The completely pre-processed spectrograms are used for the image models: a convolution neural network (CNN) and an SVM on principal components (SVM + PCA). The spectrograms without noise are used to compute envelope features using the paper by Amin et al (\cref{sec:features}). In total 760 features are computed. The set of features a model uses (3, 44 or 716) is treated as a hyperparameter. Standardization and PCA are fitted on the training folds only. 
+\\\\
+The hyperparameters of every model are tuned with a grid search on stratified 5-fold cross-validation on the training set. For every model the setting with the highest mean validation accuracy is chosen, and the final model is the model with the highest validation accuracy overall. These settings are then fixed. Leave-one-subject-out (LOSO) on the training set shows how each model generalises to a new person. Finally, every model is retrained on all 768 training samples and evaluated once on the test set. The models are compared on accuracy, macro-averaged F1 score and confusion matrices (\cref{sec:task2}).
 % ---------- Workflow figure ----------
 % Columns at x = 1.45 + 3.4k. Row 1 at y = 0 (two lanes at +-0.6);
 % row 2: test lane at y = -2.6, LOSO lane at y = -3.9.
@@ -146,23 +181,23 @@ Each sample has 800 Doppler bins, where zero Doppler is in the centre at bin 400
 
     % ---- row 1: data -> pre-processing -> two input forms -> models -> tuning ----
     \node[big, data]  (raw)  at (1.45, 0) {\textbf{Raw data}\\[2pt]
-      960 spectrograms\\ 6 persons $\times$ 4 gestures $\times$ 40\\[2pt]
-      800 Doppler $\times$ 43--448 time bins};
+      960 spectrograms\\[2pt]
+      split:\\ 768 training,\\ 192 test (stratified)};
     \node[big, data]  (prep) at (4.85, 0) {\textbf{Pre-processing}\\ per sample\\[2pt]
-      noise removal\\ Doppler crop 60--739\\ scale to $[0, 1]$};
-    \node[lane, data]  (resize) at (8.25,  0.6) {\textbf{Resize}\\ to $128 \times 128$};
-    \node[lane, data]  (feat)   at (8.25, -0.6) {\textbf{Envelope features}\\ 35, original length};
+      noise removal};
+    \node[lane, data]  (resize) at (8.25,  0.6) {Doppler crop \\ Scaling \\ Resize to $128 \times 128$};
+    \node[lane, data]  (feat)   at (8.25, -0.6) {Create envelope features};
     \node[lane, train] (imgm)   at (11.65,  0.6) {\textbf{Image models}\\ CNN, SVM + PCA};
     \node[lane, train] (featm)  at (11.65, -0.6) {\textbf{Feature models}\\ LR, SVM, RF};
     \node[big, val]   (tune) at (15.05, 0) {\textbf{Hyperparameter tuning}\\[2pt]
-      grid search, stratified 5-fold CV on 768 training samples};
+      grid search (incl.\ feature set), stratified 5-fold CV on training set};
 
     % ---- row 2 (right to left): fixed settings -> test set and LOSO -> results ----
     \node[box, val, minimum height=2.3cm] (fixed) at (15.05, -3.25) {\textbf{Selected setting}\\[2pt]
-      highest mean CV accuracy;\\ fixed from here on};
+      highest mean CV accuracy per model; best model is final;\\ fixed from here on};
     \node[lane, train] (retrain) at (11.65, -2.6) {\textbf{Retrain}\\ on all 768 samples};
     \node[lane, test]  (test)    at (8.25, -2.6) {\textbf{Test}\\ once, 192 held-out samples};
-    \node[lane, val]   (loso)    at (11.65, -3.9) {\textbf{Leave-one-subject-out}\\ 6 folds, all 960 samples};
+    \node[lane, val]   (loso)    at (11.65, -3.9) {\textbf{Leave-one-subject-out}\\ 6 folds, 768 training samples};
     \node[lane, val]   (losores) at (8.25, -3.9) {\textbf{LOSO score}\\ per held-out person};
     \node[box, data, minimum height=2.3cm] (comp) at (4.85, -3.25) {\textbf{Results}\\[2pt]
       test: known persons\\[2pt] LOSO: new person};
@@ -193,20 +228,15 @@ Each sample has 800 Doppler bins, where zero Doppler is in the centre at bin 400
     \node[sw, test]  (l3) at (0.3, -3.95) {};
     \node[anchor=west, font=\scriptsize] at (l3.east) {test};
   \end{tikzpicture}
-  \caption{Overview of the machine learning pipeline. Every sample is
-    pre-processed separately, with constants derived on the 768 training
-    samples. The image models use the resized spectrograms; the feature models
-    use envelope features computed at the original length. Hyperparameters and
-    the final model are selected with 5-fold cross-validation on the training
-    set only. The selected settings are then fixed and evaluated on the
-    held-out test set (known persons, used once) and with leave-one-subject-out
-    (a new person).}
+  \caption{Overview of the machine learning pipeline.}
   \label{fig:pipeline}
 \end{figure}
+
 
     
 \newpage
 \subsection{Data split}
+\label{sec:split}
 Before any further data exploration or processing, the data is split into three roles: training, validation and test. This guarantees that choices will not be made based on test data. A test set of 20\% (192) samples is separated as shown in \autoref{fig:split-stratified}. The split is stratified on person and gesture, so every combination has the same share in the test set. This keeps the training and test data balanced. The test set will not be touched until the final evaluation of the model.
 
 \begin{figure}[H]
@@ -270,26 +300,31 @@ The training set contains the remaining 80\% (768) of the data. Every choice tha
     \caption{Stratified 5-fold cross-validation: hyperparameter and model selection}
     \label{fig:split-folds-a}
   \end{subfigure}\hfill
-  % ---- (b) leave-one-subject-out ----
+    % ---- (b) leave-one-subject-out ----
   \begin{subfigure}[t]{0.48\textwidth}
     \centering
     \resizebox{\linewidth}{!}{%
     \begin{tikzpicture}[font=\small]
-      \draw[decorate, decoration={brace, amplitude=4pt}] (0, 0.1) -- (7.5, 0.1)
-        node[midway, above=4pt] {all samples (960), 160 per person};
+      \draw[decorate, decoration={brace, amplitude=4pt}] (0, 0.1) -- (6.0, 0.1)
+        node[midway, above=4pt] {training set (768), 128 per person};
+      \draw[decorate, decoration={brace, amplitude=4pt}] (6.05, 0.1) -- (7.5, 0.1)
+        node[midway, above=4pt] {test (192)};
       \foreach \k in {1,...,6} {
         \pgfmathsetmacro{\y}{-(\k-1)*0.55}
         \node[anchor=east] at (-0.1, \y-0.2) {Fold \k};
         \foreach \q [count=\s] in {A, B, C, D, E, F} {
           \ifnum\s=\k \def\segcol{valc}\else \def\segcol{trainc}\fi
-          \filldraw[seg, fill=\segcol] ({(\s-1)*1.25}, \y) rectangle ++(1.25, -0.4);
-          \node[lab] at ({(\s-1)*1.25+0.625}, \y-0.2) {\q};
+          \filldraw[seg, fill=\segcol] ({(\s-1)*1.0}, \y) rectangle ++(1.0, -0.4);
+          \node[lab] at ({(\s-1)*1.0+0.5}, \y-0.2) {\q};
         }
+        \filldraw[seg, fill=testc] (6.0, \y) rectangle ++(1.5, -0.4);
+        \node[lab] at (6.75, \y-0.2) {not used};
       }
     \end{tikzpicture}}
     \caption{Leave-one-subject-out: generalisation to a new person}
     \label{fig:split-folds-b}
   \end{subfigure}
+
 
   \medskip
   % ---- shared legend ----
@@ -307,11 +342,12 @@ The training set contains the remaining 80\% (768) of the data. Every choice tha
 \noindent
 After hyperparameter and model selection, the chosen models will be retrained on all 768 training samples. The final model is then evaluated once using the 192 test samples. The model performance measures how well the gestures of known persons are recognised.
 \\\\
-This test score will likely be higher than the accuracy for a new person that the model has not seen during training. To estimate the generalization to unseen people, the same models with the already fixed hyperparameters will be retrained using Leave-one-subject-out (LOSO). The model trains on five persons and tests on the 6th unseen person, as shown in \autoref{fig:split-folds-b}. Since the hyperparameters were selected based on all people, the accuracy will be slightly optimistic. However, it is beyond the scope of this report to retune the hyperparameters with a nested LOSO split. Instead, this step just acts as an indication of the generalization performance. LOSO is not used for any choice, so it can use all 960 samples.
+This test score will likely be higher than the accuracy for a new person that the model has not seen during training. To estimate the generalization to unseen people, the same models with the already fixed hyperparameters will be retrained using Leave-one-subject-out (LOSO). The model trains on five persons and tests on the 6th unseen person, as shown in \autoref{fig:split-folds-b}. Since the hyperparameters were selected based on all people, the accuracy will be slightly optimistic. However, it is beyond the scope of this report to retune the hyperparameters with a nested LOSO split. Instead, this step just acts as an indication of the generalization performance. LOSO is not used for any choice. It only uses the 768 training samples, so the test set stays unseen until the final evaluation.
 
 
 
-\newpage
+
+% \newpage
 % =====================================================================
 \section{Task 1: Data Pre-processing and Feature Extraction}
 \label{sec:task1}
@@ -347,7 +383,7 @@ The exploratory data analysis has been conducted using only samples from the tra
   \label{fig:length_boxplot}
 \end{wrapfigure}
 \noindent
-The spectrograms all share a similar structure with 800 doppler bins and a varying number of time bins. An example spectogram of each of the 4 gestures is presented in \autoref{fig:spectrograms}. Zero motion is placed in the centre at doppler bin 400. The spectograms have already been cropped to the gesture duration, which causes the varying number of time bins between samples. Wave and swipe gestures tend to take longer than click and pinch gestures, as shown in \autoref{fig:length_boxplot}. The sample duration therefore holds relevant information that would be removed by resizing all spectrograms to equal length.
+The spectrograms all share a similar structure with 800 doppler bins and a varying number of time bins. An example spectrogram of each of the 4 gestures is presented in \autoref{fig:spectrograms}. Zero motion is placed in the centre at doppler bin 400. The spectrograms have already been cropped to the gesture duration, which causes the varying number of time bins between samples. Wave and swipe gestures tend to take longer than click and pinch gestures, as shown in \autoref{fig:length_boxplot}. The sample duration therefore holds relevant information that would be removed by resizing all spectrograms to equal length.
 \\\\
  Yet, the spectrograms have varying magnitude ranges depending on both the gesture and the person. Most of the values however contain background noise instead of gesture energy. The background noise level differs per sample, as seen in \autoref{fig:doppler_profile_persons}, making a fixed noise floor for all samples unsuitable. 
 \begin{figure}[H]
@@ -419,7 +455,7 @@ Finally, the spectrograms have to be made uniform in their dimensions so that th
 \begin{figure}[H]
   \centering
   \includegraphics[width=\linewidth]{figures/prepro_all_steps.pdf}
-  \caption{The four pre-processing steps applied to one wave sample from the training set. The size of the image (Doppler $\times$ time bins) is given above each panel.}
+  \caption{The pre-processing steps applied to a wave sample from the training set.}
   \label{fig:prepro_steps}
 \end{figure}
 
@@ -452,22 +488,19 @@ Finally, the spectrograms have to be made uniform in their dimensions so that th
 % \end{itemize}}
 
 \subsection{Feature Extraction and Selection}
-\todo{where should PCA be?}
-\todo{this section is AI written, rewrite!}
-
 \label{sec:features}
-The CNN learns its own features from the resized spectrograms. The classical models, however, would have to work with $128 \times 128 = 16384$ pixels while only 768 training samples are available, and the resizing removes the gesture duration. The feature models therefore get a compact description of the gesture outline instead, based on the micro-Doppler envelopes of Amin et al.\ \cite{amin2019}. All features are computed on the spectrograms at their original length, so the duration is preserved.
+\noindent
+The CNN will learn features from the pre-processed and resized spectrograms. The classical models on the other hand would have to process $128^2=16384$ pixels, which is a very large number compared to the just 768 available training samples. Resizing also removed the gesture duration. Instead, the feature models will be given a compact representation of the spectrograms based on their micro-Doppler envelopes by Amin et al \cite{amin2019}. All envelope features are computed on the spectrograms after noise has been removed but before and cropping, scaling and resizing so the original duration is preserved. 
 
 \subsubsection{Envelope extraction}
 \label{sec:envelopes}
 
-\paragraph{Gesture power and gesture span}
-The envelopes are computed on the gesture power $P(d, n)$: the linear power above the sample's own noise floor, using the same noise removal as in \autoref{sec:task1}, so that pure noise has power zero. Here $d$ is the Doppler bin relative to zero Doppler (positive is motion towards the radar) and $n$ the time bin. The Doppler axis is not cropped, since nothing is resized here. The paper uses 1-second windows that each contain one complete gesture. The DopNet recordings have different lengths with silence before and after the gesture, so only the gesture span is kept: from the first to the last time bin with at least 5\% of the power of the strongest time bin.
+The envelopes are computed on the gesture's linear power above the sample's own noise floor, $P(d, n)$.The noise is removed like in \autoref{sec:task1}, so that pure noise has power zero. Here $d$ is the Doppler bin relative to zero Doppler (positive is motion towards the radar) and $n$ the time bin. The spectrograms are then cropped in time to just the gesture span: from the first to the last time bin with at least 5\% of the power of the strongest time bin.
 
-\paragraph{Step 1: effective bandwidth}
-The spectrogram is split into a positive and a negative Doppler half. For each half the gesture power is summed over time and, counting outward from zero Doppler, the effective bandwidth ends where 99.9\% of the energy of that half is reached. This Doppler bin is the maximum positive Doppler $f_p$ or maximum negative Doppler $f_n$ of the gesture. The paper does not define the effective bandwidth; a fixed energy share is a common choice. Because the share is taken on linear power, a lobe 20~dB below the peak carries only about 1\% of the energy, so a share of 99\% would cut off the outer lobes of the gesture, while 99.9\% includes them. Isolated noise cells far from zero Doppler carry almost no energy and stay outside.
+\paragraph{Effective bandwidth}
+The spectrogram is split into a positive and a negative Doppler half. For each half the gesture power is summed over time and, counting outward from zero Doppler, the effective bandwidth ends where 99.9\% of the energy of that half is reached. This Doppler bin is the maximum positive Doppler $f_p$ or maximum negative Doppler $f_n$ of the gesture. A fixed energy share is used as the effective bandwidth. A share of just 99\% was found to cut the outer lobes of the gesture, while 99.9\% keeps them. Isolated noise cells far from zero Doppler carry almost no energy and stay outside.
 
-\paragraph{Steps 2 and 3: energy and threshold}
+\paragraph{Energy and threshold}
 In every time bin the energy of each half is
 \begin{equation}
   E_U(n) = \sum_{d > 0} P(d, n), \qquad E_L(n) = \sum_{d < 0} P(d, n),
@@ -478,51 +511,35 @@ and the threshold is a fixed fraction of it, $T_U(n) = \sigma_U E_U(n)$ and $T_L
 \end{equation}
 and likewise $\sigma_L$ with $f_n$. In every other time bin the threshold scales with the energy of that time bin.
 
-\paragraph{Step 4: envelope}
+\paragraph{Envelope}
 The envelope is the outermost Doppler bin that still reaches the threshold:
 \begin{equation}
   e_U(n) = \max\{d > 0 : P(d, n) \geq T_U(n)\}, \qquad
   e_L(n) = \min\{d < 0 : P(d, n) \geq T_L(n)\}.
 \end{equation}
 Time bins without energy in a half get envelope 0.
-
-\paragraph{Step 5: feature vector}
-As in the paper, the envelopes are concatenated into one feature vector, $e = [e_U, e_L]$. The paper's samples all have the same length; the DopNet gesture spans range from 51 to 376 time bins. Each envelope is therefore placed in a fixed window of 358 time bins, starting at the gesture start and zero-padded after the gesture end. 99\% of the training gesture spans fit in this window; the 7 longer training samples (and 1 test sample) are cut. Nothing is resampled, so the gesture duration remains visible in the vector as the point where the zeros begin.
-
-\autoref{fig:envelope_steps} shows all steps for one wave sample, with a maximum Doppler of $+282$ and $-269$ bins. The envelopes follow the swings of the wave: at the peak of each swing they reach the outer lobes, and between two swings, when the hand turns, they fall back towards zero Doppler. \autoref{fig:envelope_examples} shows the envelopes for one sample of each gesture. The extent of the envelopes differs clearly between the gestures: the pinch stays within about $\pm 60$ Doppler bins, while the wave swings much further out. The figure also shows the weak point of a threshold per time bin. In time bins with little gesture energy, such as a pause between two swings or the end of the gesture, $E(n)$ and therefore the threshold are so low that single noise cells far from zero Doppler pass it, and the envelope jumps (the wave around time bin 165 and the end of the swipe). The large excursion of the click is not noise but its short broadband stripe, which covers almost the whole Doppler axis.
-
+\paragraph{Feature vector}
+As in the paper, the envelopes are concatenated into one feature vector, $e = [e_U, e_L]$. Each envelope is placed in a fixed window of 358 time bins, starting at the gesture start and zero-padded after the gesture end. 99\% of the training gesture spans fit in this window; the longer samples are cut. Nothing is resampled, so the gesture duration remains visible in the feature vector.
+\newpage
 \begin{figure}[H]
   \centering
   \includegraphics[width=\linewidth]{figures/amin_envelope_steps.pdf}
-  \caption{Envelope extraction for one wave sample from the training set. Left: gesture power with the gesture span (vertical dashed lines), the effective bandwidth (horizontal dashed lines) and the envelopes $e_U$ (white) and $e_L$ (black); time bin 0 is the gesture start. Right: the resulting feature vector $e = [e_U, e_L]$, zero-padded after the end of the gesture.}
+  \caption{Envelope extraction for one wave sample. Left: gesture power with the gesture span and effective bandwidth (dashed lines) and the envelopes $e_U$ (white) and $e_L$ (black). Right: the resulting zero-padded feature vector $e = [e_U, e_L]$.}
   \label{fig:envelope_steps}
 \end{figure}
+\noindent
+\autoref{fig:envelope_steps} shows all steps for a training spectrogram (gesture span, bandwidth, envelopes and resulting feature vector). \autoref{fig:envelope_examples} shows the envelopes for the four different gestures. The envelope length differs between gestures and the extent into Doppler bins also varies. The pinch stays roughly within 60 Doppler bins from the center, while the wave swings further out. The figure also reveals a weak point of the threshold per time bin. For bins that hold little gesture energy, the threshold becomes so low that noise can pass it. As a result, the envelope unintentionally jumps far out. 
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=\linewidth]{figures/amin_envelopes_examples.pdf}
-  \caption{Raw spectrograms of one training sample per gesture, with the envelopes $e_U$ (white) and $e_L$ (black) over the gesture span.}
+  \caption{Raw spectrograms with the envelopes $e_U$ (white) and $e_L$ (black) over the gesture span.}
   \label{fig:envelope_examples}
 \end{figure}
 
 \subsubsection{Available features}
 \label{sec:feature_list}
-From the envelopes of \autoref{sec:envelopes}, five groups of features are computed for every sample (\autoref{tab:features}). The first two groups are those of the paper; the other three are compact versions of the same envelopes, added for the classical models.
-
-\paragraph{Window envelopes}
-The feature vector $e = [e_U, e_L]$ of step 5, used by the paper as its main feature set. It keeps the full time resolution and the gesture duration, but it is large (716 values) compared to the 768 training samples, and two samples of the same gesture performed at a different speed do not line up in time.
-
-\paragraph{Empirical features}
-The paper also uses three empirical features as a baseline (Sec.~IV-A of \cite{amin2019}): the length of the gesture span $T = t_e - t_s$ in time bins, the ratio of the maximum Doppler frequencies $R = |f_p / f_n|$, which describes the balance between motion towards and away from the radar, and the Doppler bandwidth $B_w = |f_p| + |f_n|$.
-
-\paragraph{Time-normalised envelopes}
-Each envelope is divided into 16 equal segments of the gesture span, and every segment is replaced by its mean. Gestures of different speed then line up, while the length is kept separately in $T$. Averaging, rather than sampling single points, lets every time bin count and damps the single-bin jumps of the envelopes. With 16 segments, even the shortest gesture span (51 time bins) still has about three time bins per segment.
-
-\paragraph{Envelope statistics}
-Four statistics summarise each envelope magnitude, $|e_U(n)|$ and $|e_L(n)|$, over the gesture span: the mean, standard deviation and median describe its level and variation, and the 90th percentile is a robust maximum that a few jumps do not move.
-
-\paragraph{Recording length}
-The length of the whole recording in time bins, before the gesture span is cut out.
+From the envelopes, five feature groups are computed for every sample. \autoref{tab:features} shows these groups: the first two groups are the features as in the paper by Amin et al., the other three are compact representations of the envelopes for the classical models.
 
 \begin{table}[H]
   \centering
@@ -543,15 +560,15 @@ The length of the whole recording in time bins, before the gesture span is cut o
   \end{tabular}
 \end{table}
 
+\noindent
+The window envelopes keep the full time resolution but with a length of 716 values they are large compared to the number of training samples. Additionally, envelopes of the same gesture performed at different speeds are misaligned. The time-normalized feature set solves this averaging each envelope over 16 equal segments of the gesture span. The gesture duration is kept separately as length $T$. This also dampens single bin jumps caused by noise. The 90th percentile similarly acts as a robust maximum less sensitive to noise.
 
 
-
-
-\subsection{Task 1 Results}
-\placeholder{%
-Summarise the outcome of Task~1: final input representation(s) fed to each
-model, final feature set and its size, key plots showing class separability,
-and a short discussion of what worked and what did not.}
+% \subsection{Task 1 Results}
+% \placeholder{%
+% Summarise the outcome of Task~1: final input representation(s) fed to each
+% model, final feature set and its size, key plots showing class separability,
+% and a short discussion of what worked and what did not.}
 
 \newpage
 % =====================================================================
@@ -560,58 +577,55 @@ and a short discussion of what worked and what did not.}
 % =====================================================================
 \subsection{Model Selection and Design}
 \label{sec:models}
-Five models are tested on the pre-processed data of Task~1: three on the 27
-hand-crafted features and two on the $128 \times 128$ spectrogram images.
+Five models are trained on the pre-processed data: three on the envelope
+features (\autoref{tab:features}) and two on the $128 \times 128$ images.
 \begin{itemize}
-  \item \textbf{Logistic regression (LR):} multinomial (softmax) model trained
-        with the cross-entropy loss and an L2 penalty; the linear,
-        interpretable baseline.
-  \item \textbf{SVM (features):} soft-margin support vector machine; a linear,
-        polynomial or RBF kernel allows a nonlinear decision boundary.
-  \item \textbf{Random forest (RF):} decision trees, each trained on a bootstrap
-        sample with a random subset of features per split, combined by
-        majority vote; needs no scaling and captures feature interactions.
-  \item \textbf{SVM + PCA (images):} PCA with whitening reduces the 16\,384
-        pixels to at most 100 components, followed by an SVM; tests whether
-        raw pixels can replace hand-crafted features.
-  \item \textbf{CNN (images):} the required deep network, which learns its own
-        features from the images.
+  \item \textbf{Logistic regression (LR):} multinomial model with the
+        cross-entropy loss and an L2 penalty; the linear, interpretable baseline.
+  \item \textbf{SVM:} soft-margin support vector machine with a linear or RBF
+        kernel.
+  \item \textbf{Random forest (RF):} decision trees on bootstrap samples with a
+        random subset of features per split, combined by majority vote.
+  \item \textbf{SVM + PCA:} PCA reduces the 16\,384 pixels, followed
+        by an SVM.
+  \item \textbf{CNN:} the deep network, which learns its own features
+        from the images.
 \end{itemize}
-Scaling and PCA are part of a scikit-learn \texttt{Pipeline}, so they are
-fitted on the training folds only.
+The feature models choose between three feature sets: the three empirical
+features (\emph{empirical}), the empirical features with the time-normalised
+envelopes, the envelope statistics and the recording length (\emph{compact}, 44
+features) and the window envelopes (\emph{window}, 716 features). Scaling and
+PCA are part of a scikit-learn \texttt{Pipeline}, so they are fitted on the
+training folds only.
 
 \subsubsection{CNN layout}
-The CNN (\cref{tab:cnn-layout}) consists of convolution
-blocks, each a $3 \times 3$ convolution with ReLU activation followed by
-$2 \times 2$ max pooling, then dropout (0.5) and a softmax layer with one output
-per gesture. The convolutions use zero padding: a convolution
-keeps the size of its input and only the pooling halves it, so after five blocks
-the image is exactly $4 \times 4$. Without padding every convolution would also
-remove the outer pixels, which hold the start and end of a gesture and the
-highest Doppler velocities. ReLU, $\max(0, x)$, does not saturate for positive
-inputs, so the gradient does not vanish through the five layers, and it is cheap
-to compute; its sparse output also suits the spectrograms, in which most pixels
-are zero after noise removal. With 26\,436 parameters the network is small
-enough for 960 samples. It is trained with the cross-entropy loss and mini-batch
-SGD (batch size 32); training stops when the loss on 10\% of the training data
-has not decreased for 10 epochs.
+The CNN (\autoref{tab:cnn-layout}) stacks blocks of a $3 \times 3$ convolution
+with ReLU and $2 \times 2$ max pooling, followed by dropout and a softmax layer.
+The convolutions use zero padding, so only the pooling halves the image and the
+outer pixels, which hold the start and end of a gesture and the highest Doppler
+velocities, are not lost. ReLU does not saturate for positive inputs, so the
+gradient does not vanish through the five layers and its sparse output suits
+the images, in which most pixels are zero after the noise removal. The network
+is trained with the cross-entropy loss and mini-batch SGD (batch size 32);
+training stops when the loss on 10\% of the training data has not decreased for
+10 epochs.
 
 \begin{table}[!htbp]
   \centering
-  \caption{Selected CNN layout ($3 \times 3$ convolutions, zero padding, ReLU).}
+  \caption{Chosen CNN layout ($3 \times 3$ convolutions, zero padding, ReLU).}
   \label{tab:cnn-layout}
   \small
   \begin{tabular}{@{}llr@{}}
     \toprule
     Layer & Output shape & Parameters \\
     \midrule
-    Input (spectrogram)            & $128 \times 128 \times 1$ & 0 \\
+    Input (image)                  & $128 \times 128 \times 1$ & 0 \\
     Block 1: conv (8) + max pool   & $64 \times 64 \times 8$   & 80 \\
     Block 2: conv (16) + max pool  & $32 \times 32 \times 16$  & 1\,168 \\
     Block 3: conv (32) + max pool  & $16 \times 16 \times 32$  & 4\,640 \\
     Block 4: conv (32) + max pool  & $8 \times 8 \times 32$    & 9\,248 \\
     Block 5: conv (32) + max pool  & $4 \times 4 \times 32$    & 9\,248 \\
-    Flatten + dropout (0.5)        & 512                       & 0 \\
+    Flatten + dropout (0.25)       & 512                       & 0 \\
     Dense + softmax                & 4                         & 2\,052 \\
     \midrule
     Total                          &                           & 26\,436 \\
@@ -621,219 +635,172 @@ has not decreased for 10 epochs.
 
 \subsection{Validation Procedure and Performance Indicators}
 \label{sec:validation}
-Every model is validated in two ways:
-\begin{itemize}
-  \item \textbf{Leave-one-subject-out (LOSO):} six folds, each trained on five
-        persons and validated on the sixth. This measures recognition of a
-        person not seen during training, the aim of the project. The LOSO
-        accuracy is the mean over the six persons of the best hyperparameter
-        setting; because the same folds choose and score the setting, it is
-        slightly optimistic.
-  \item \textbf{Random split:} the 80/20 split of
-        \cref{fig:pipeline}. The hyperparameters are chosen with 5-fold
-        cross-validation on the 768 training samples (validation accuracy); the
-        best settings are saved and tested once on the 192
-        test samples.
-\end{itemize}
-The 40 repetitions per person and gesture come from one recording, so in a
-random split the same person appears in training and validation. The classes
-are balanced, so accuracy is the main metric, together with macro-averaged
-precision, recall and F1 and by confusion matrices.
+The models follow the pipeline of \autoref{fig:pipeline} and the split of
+\autoref{fig:split-folds}:
+\begin{enumerate}
+  \item The model and its hyperparameters are chosen with stratified 5-fold
+        cross-validation on the 768 training samples (validation accuracy);
+        the final model is the model with the highest mean validation accuracy.
+  \item The chosen setting of every model is evaluated with leave-one-subject-out
+        (LOSO) on the training samples, to see how it generalises to a new person.
+  \item Every chosen setting is retrained on the entire training set and
+        evaluated once on the 192 test samples, after the final model is chosen.
+\end{enumerate}
+The classes are balanced, so accuracy is the main metric, together with the
+macro-averaged precision, recall and F1 score and a confusion matrix. Scores
+are given as mean $\pm$ standard deviation over the folds.
 
 \subsection{Hyperparameter Tuning}
 \label{sec:tuning}
-All models are tuned with a grid search: every setting is trained on the
-training folds and the one with the highest mean validation accuracy is
-selected, separately for LOSO and for the random split (\cref{tab:hyper}).
-\Cref{fig:tuning} shows the training and validation accuracy along the most
-important hyperparameter of the classical models.
+Every model is tuned with a grid search on 5-fold cross-validation
+(\autoref{tab:hyper}); the setting with the highest mean validation accuracy is
+chosen.
 
 \begin{table}[!htbp]
   \centering
-  \caption{Hyperparameter search space and selected values.}
+  \caption{Search space and chosen setting (5-fold cross-validation).}
   \label{tab:hyper}
   \small
-  \begin{tabular}{@{}llll@{}}
+  \begin{tabular}{@{}lll@{}}
     \toprule
-    Model & Search space & LOSO & Random split \\
+    Model & Search space & Chosen \\
     \midrule
-    LR             & $C$: $10^{-3}, 10^{-2}, \dots, 10^{3}$ & $C = 10$ & $C = 1$ \\
-    SVM (features) & kernel: linear/poly/RBF; $C$: 0.1, 1, 10, 100 & linear, $C = 1$ & RBF, $C = 10$ \\
-    SVM + PCA      & components: 20/50/100; kernel; $C$ & 20, RBF, $C = 1$ & 20, RBF, $C = 10$ \\
-    RF             & trees: 50/100/300; depth: 3/5/10/$\infty$ & 300, depth 10 & 100, depth $\infty$ \\
-    CNN            & blocks: 4, 5, 6, \dots\ (until LOSO drops) & 5 blocks & 5 blocks \\
+    LR        & feature set; $C$: 0.01--100 & compact, $C = 1$ \\
+    SVM       & feature set; kernel: linear/RBF; $C$: 0.1--10\,000 & compact, RBF, $C = 100$ \\
+    RF        & feature set; trees: 100/300/1000; depth: 5/10/20/$\infty$ & compact, 300, depth 20 \\
+    SVM + PCA & components: 5/10/20/50/100; kernel: linear/RBF; $C$: 0.1--100 & 20, RBF, $C = 10$ \\
+    CNN       & blocks: 4, 5, 6, \dots; learning rate: 0.01/0.03/0.1; dropout: 0.25/0.5 & 5 blocks, 0.03, 0.25 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\linewidth]{figures/report_tuning.pdf}
-  \caption{Training (dashed) and validation (solid) accuracy per hyperparameter; circles: selected setting.}
+  \includegraphics[width=\linewidth]{figures/model_tuning.pdf}
+  \caption{Training (dashed) and validation (solid) accuracy of the classical models; circles: chosen setting.}
   \label{fig:tuning}
 \end{figure}
 
 \subsubsection{Classical models}
-Three observations follow from \cref{fig:tuning}.
-First, under LOSO the validation accuracy stays 0.14--0.42 below the training
-accuracy for every setting: the limit is the generalisation to a new person, not
-the fit. Second, the random split selects more flexible settings than LOSO
-(\cref{tab:hyper}): an RBF kernel with $C = 10$ instead of a linear kernel for
-the SVM, and fully grown trees for the RF. A random split rewards memorising
-person-specific details, because the same person is in the training and
-validation folds. Third, LR improves up to $C = 10$ (0.78) and drops slightly
-with weaker regularisation (0.76 at $C = 1000$), and SVM + PCA does not exceed
-0.60 under LOSO, against 0.94 for the random split.
+The compact feature set is chosen for all three feature models
+(\autoref{fig:tuning}). The three empirical features alone reach at most 0.76:
+they describe the size of a gesture, not its course in time. The window
+envelopes, 716 values for 768 samples, overfit: for LR the training accuracy
+rises to 1.0 with weaker regularisation while the validation accuracy falls from
+0.71 to 0.61. Grids were extended where the chosen value lay at their edge: every SVM
+$C \geq 100$ gives 0.887 (the training data is fitted perfectly), RF depth 20 equals fully
+grown trees, 1000 trees are worse than 300 (0.908), and for SVM + PCA 20
+components are best (0.87 with 5, 0.90 with 10, 0.93 with 50, 0.91 with 100).
 
 \subsubsection{CNN layout search}
-For the CNN the number of convolution blocks is the
-most important hyperparameter. Starting at four blocks, one block of 32 filters
-is added at a time until the LOSO validation accuracy goes down
-(\cref{fig:cnn-depth}). The learning rate and dropout are fixed at 0.03 and 0.5,
-the values chosen in an earlier nested search on the previous pre-processing
-(dropout 0.5 in five of six folds, learning rates 0.01--0.1). Four blocks reach
-0.67, five 0.73 and six 0.69, so five blocks are selected. The training accuracy
-is 0.98--0.99 for every depth, so the depth changes the generalisation, not the
-fit. Each block halves the feature map and enlarges the receptive field: with
+The number of convolution blocks is chosen first, with the learning rate and
+dropout fixed at 0.03 and 0.5: starting at four blocks, a block of 32 filters is
+added until the validation accuracy goes down (\autoref{fig:cnn}a). Four blocks
+reach 0.939, five 0.964 and six 0.961, so five blocks are chosen. The training
+accuracy is 0.99 for every depth, so the depth changes the generalisation, not
+the fit. Each block halves the feature map and enlarges the receptive field: with
 four blocks a unit sees 46 of the 128 pixels, with five blocks 94, which covers
-most of a gesture. A sixth block adds parameters (34\,148 versus 26\,436)
-without new context. The random split cannot separate five and six blocks (0.96
-for both).
+most of a gesture, while a sixth block only adds parameters. For five blocks,
+five of the six learning rate and dropout settings reach 0.96--0.97
+(\autoref{fig:cnn}b); only learning rate 0.1 with dropout 0.5 is unstable
+(0.866). Learning rate 0.03 with dropout 0.25 is chosen (0.967).
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.7\linewidth]{figures/cnn_depth_search.pdf}
-  \caption{CNN depth search: validation (bars) and training (black lines) accuracy.}
-  \label{fig:cnn-depth}
+  \includegraphics[width=\linewidth]{figures/cnn_search.pdf}
+  \caption{CNN search (5-fold cross-validation): (a) number of blocks, (b) learning rate and dropout.}
+  \label{fig:cnn}
 \end{figure}
 
 \subsection{Results and Comparison}
 \label{sec:results}
 \begin{table}[!htbp]
   \centering
-  \caption{Accuracy and macro-F1 of the selected settings (LOSO: mean $\pm$ std over six persons; --: not evaluated).}
+  \caption{Accuracy of the chosen settings (mean $\pm$ std over the folds).}
   \label{tab:results}
   \small
   \begin{tabular}{@{}lccccc@{}}
     \toprule
-    & \multicolumn{2}{c}{LOSO} & \multicolumn{3}{c}{Random split} \\
-    \cmidrule(lr){2-3} \cmidrule(l){4-6}
-    Model & Accuracy & Macro-F1 & Validation & Test & Test macro-F1 \\
+    Model & Training & Validation (5-fold) & LOSO & Test & Test F1 \\
     \midrule
-    LR                 & $\mathbf{0.781 \pm 0.131}$ & \textbf{0.779} & 0.918 & 0.948 & 0.948 \\
-    SVM (features)     & $0.759 \pm 0.139$ & 0.755 & 0.945 & \textbf{0.974} & \textbf{0.974} \\
-    RF                 & $0.759 \pm 0.204$ & 0.757 & 0.953 & 0.948 & 0.948 \\
-    SVM + PCA (images) & $0.601 \pm 0.135$ & 0.591 & 0.940 & 0.938 & 0.938 \\
-    CNN (images)       & $0.727$           & --    & \textbf{0.958} & -- & -- \\
+    LR        & 0.932 & $0.855 \pm 0.018$ & $0.733 \pm 0.055$ & 0.865 & 0.864 \\
+    SVM       & 1.000 & $0.887 \pm 0.022$ & $0.728 \pm 0.065$ & 0.875 & 0.876 \\
+    RF        & 1.000 & $0.915 \pm 0.031$ & $\mathbf{0.747 \pm 0.090}$ & 0.885 & 0.886 \\
+    SVM + PCA & 0.998 & $0.949 \pm 0.021$ & $0.612 \pm 0.135$ & \textbf{0.953} & \textbf{0.954} \\
+    CNN       & 0.997 & $\mathbf{0.967 \pm 0.017}$ & $0.737 \pm 0.122$ & 0.948 & 0.948 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.78\linewidth]{figures/report_comparison.pdf}
-  \caption{Accuracy per model: LOSO (error bars: std over persons), random-split validation and test.}
-  \label{fig:comparison}
+  \includegraphics[width=\linewidth]{figures/model_results.pdf}
+  \caption{(a) Training of the CNN on the training set, (b) LOSO accuracy per person, (c) confusion matrix of the CNN on the test set.}
+  \label{fig:results}
 \end{figure}
 
-\subsubsection{LOSO versus random split}
-\Cref{fig:comparison} shows the
-results: on the random split all models reach 0.92--0.97, but for a new person
-the accuracy drops to 0.60--0.78. The random split overestimates the accuracy by
-0.17 (LR) to 0.34 (SVM + PCA) and ranks the models differently: LR is the weakest
-on the random-split validation (0.92) but the best under LOSO. The random-split
-validation and test accuracies agree within 0.03, so the optimism comes from the
-shared persons, not from the size of the test set.
+\subsubsection{Model choice}
+The final model has the highest mean validation accuracy, chosen before the
+test set is used: the CNN ($0.967 \pm 0.017$, \autoref{tab:results}). Its lead
+over SVM + PCA ($0.949 \pm 0.021$) is one standard deviation, but on the same
+folds the CNN is better than SVM + PCA and the RF in four of the five folds
+(equal to the RF in the fifth) and better than LR and SVM in all five. LOSO
+supports the choice: for a new person the CNN equals the best feature model and
+beats SVM + PCA. The RF is the alternative if interpretability or training cost
+matters (equal under LOSO, 0.05 lower in validation).
 
-\subsubsection{Comparison of the models}
-Under LOSO the three feature models are the
-best (LR 0.78, SVM 0.76, RF 0.76), followed by the CNN (0.73) and SVM + PCA
-(0.60). The differences between the feature models (at most 0.02) are much
-smaller than the spread between persons (std 0.13--0.20), so they are not
-significant. Hand-crafted features such as the Doppler centroid, the envelopes
-and the duration describe the motion itself and transfer to a new person. On the
-same images the CNN is 0.13 better than SVM + PCA: convolution and pooling detect
-local patterns at any position, whereas PCA components depend on where a pattern
-lies in the image. Macro-F1 is within 0.01 of the accuracy for every model, as
-expected for balanced classes.
+\subsubsection{Generalisation to a new person}
+Under LOSO every model loses accuracy (\autoref{tab:results}): the CNN drops from
+0.967 to 0.737, SVM + PCA from 0.949 to 0.612 and the feature models to
+0.73--0.75. The cross-validation folds contain the same persons as the training
+folds and therefore reward person-specific details. For a new person the RF,
+CNN, LR and SVM lie within 0.02, much less than the spread between persons
+(standard deviation 0.06--0.12); SVM + PCA is clearly the worst, because its
+components describe where the energy lies in the images of the training
+persons. Person A is the hardest for most models (\autoref{fig:results}b).
 
-\begin{figure}[!htbp]
-  \centering
-  \includegraphics[width=0.8\linewidth]{figures/report_persons.pdf}
-  \caption{(a) LOSO accuracy per held-out person. (b) Confusion matrix of LR under LOSO.}
-  \label{fig:persons}
-\end{figure}
-
-\subsubsection{Errors}
-Person B is the hardest for all models (0.41--0.56), while
-persons D and F reach 0.85--0.91 with the feature models (\cref{fig:persons}a);
-the RF varies most between persons (0.41--0.91). The confusion matrix of LR
-(\cref{fig:persons}b) shows the physically similar pairs: 59 of the 240 clicks
-are predicted as pinch (click recall 0.64), both short finger movements, and 45
-waves as swipe, both long hand movements; pinch is recognised best (0.92).
+\subsubsection{Test set}
+The early-stopping loss of the final CNN follows the training loss without
+rising and is lowest at epoch 39, whose weights are restored
+(\autoref{fig:results}a).
+The test accuracies lie within 0.03 of the validation accuracies: the test set
+contains the same persons as the training set, so it confirms the
+cross-validation estimate, not the generalisation to a new person. The CNN
+reaches 0.948 (macro-F1 0.948). Of its 10 errors, 4 are wave versus swipe and 4
+are a swipe or click predicted as pinch (\autoref{fig:results}c): the long hand
+movements and the short finger movements. Precision, recall and F1 lie within
+0.01 of the accuracy for every model, as expected with balanced classes.
 
 \subsubsection{Summary}
-The random split overestimates the accuracy for a new person
-by 0.17--0.34 and cannot separate the models, so the models are compared on
-LOSO. LR on the hand-crafted features is the final model: it has the best LOSO
-accuracy and macro-F1 (0.78), only 112 parameters and interpretable
-coefficients; the SVM and RF are equally good within the variation between
-persons but more complex. The CNN meets the deep-network requirement and clearly
-outperforms the other image model, but stays below the feature models; more
-persons would be needed for it to generalise better.
+The CNN is the final model: it has the best validation accuracy and reaches
+0.948 on the test set. For a new person all models lose 0.12--0.34 accuracy and
+the CNN and the feature models end up at the same level (0.73--0.75). In short, more
+persons are needed to close this gap and to obtain higher accuracies.
 
 \newpage
 % =====================================================================
 \section{Conclusions}
 \label{sec:conclusions}
 % =====================================================================
-\placeholder{%
-\textbf{Hard limit: less than 200 words.} Answer the problem statement:
-best model and its test performance, the most influential pre-processing /
-feature choices, limitations (small dataset, subject variability, test-set
-size), and possible future work (e.g.\ complex-valued input, data augmentation,
-transfer learning).}
 
-This work classified four radar hand gestures from micro-Doppler spectrograms,
-with the emphasis on recognising gestures of a person not seen during training.
-Five models were compared with leave-one-subject-out (LOSO) validation and a
-random 80/20 split. Logistic regression on 27 hand-crafted features generalised
-best: a LOSO accuracy of $0.78 \pm 0.13$ (macro-F1 0.78) and 0.95 on the random
-test set. The SVM and the random forest on the same features were equally good
-within the variation between persons (0.76); the CNN on the spectrogram images
-reached 0.73 and an SVM on PCA-reduced images 0.60. Two findings stand out.
-First, the random split overestimates the accuracy for a new person by 0.17 to
-0.34, because repetitions of the same person are highly correlated, and it
-favours more flexible settings. Second, features that describe the motion
-(Doppler centroid, envelopes, duration) transfer better to a new person than
-image pixels. The main limitation is the small number of persons: the accuracy
-ranges from 0.41 to 0.91 between persons. Future work should add persons and
-recording sessions and extend the CNN
-search to the learning rate and dropout.
+This work classified four radar hand gestures from micro-Doppler spectrograms.
+The noise was removed per recording, the Doppler axis cropped and the envelopes
+of Amin et al.\ extracted. Five models were chosen with 5-fold cross-validation
+on the training set, evaluated with leave-one-subject-out (LOSO) and tested once
+on a held-out test set. A CNN with five convolution blocks on the pre-processed
+images was the best model: a validation accuracy of $0.967 \pm 0.017$ and a test
+accuracy of 0.948 (macro-F1 0.948). Among the feature models the random forest
+on the compact envelope features was best (0.915). The main limitation is the
+generalisation to a new person: under LOSO all models lose 0.12--0.34 accuracy,
+and the CNN (0.74) is not better than the feature models (0.73--0.75). The
+recordings of one person are highly correlated, and six persons are too few to
+learn the variation between persons. Future work should add more persons and
+more recording sessions, vary the gesture speed and timing, and reduce the jumps
+of the envelopes in weak time bins.
 
-% =====================================================================
-% References (on a separate page, not counted towards 10-page limit)
-% =====================================================================
-\clearpage
-\pagenumbering{roman} % distinguish from the counted body pages
-\begin{thebibliography}{9}
-\bibitem{dopnet}
-  UCL Radar Group, ``DopNet radar hand-gesture dataset,''
-  \url{https://github.com/UCLRadarGroup/DopNet}.
-\bibitem{amin2019}
-  M.~G. Amin, Z.~Zeng, and T.~Shan, ``Hand gesture recognition based on radar
-  micro-Doppler signature envelopes,'' in \emph{Proc.\ IEEE Radar Conf.},
-  2019, pp.~1--6.
-\bibitem{fioranelli2016}
-  F.~Fioranelli, M.~Ritchie, and H.~Griffiths, ``Centroid features for
-  classification of armed/unarmed multiple personnel using multistatic human
-  micro-Doppler,'' \emph{IET Radar, Sonar \& Navigation}, vol.~10,
-  pp.~1702--1710, 2016.
-\bibitem{pallotta2021}
-  L.~Pallotta, M.~Cauli, C.~Clemente, F.~Fioranelli, G.~Giunta, and A.~Farina,
-  ``Classification of micro-Doppler radar hand-gesture signatures by means of
-  Chebyshev moments,'' in \emph{Proc.\ IEEE MetroAeroSpace}, 2021,
-  pp.~182--187.
-\end{thebibliography}
+\newpage
+\section{AI Acknowledgement}
+During this assignment, AI has been used. Claude Code was used to write scaffolding code for the plots and refactor prototyping code for better readability. It also helped by adding clear comments to the codebase and was used as a reference to understand python syntax and specific functions. All results were interpreted by the authors, which led to this final report. In the report, AI reviewed drafts versions of sections, which led to suggested improvements that have been evaluated and incorporated where appropriate.
+
 
 \end{document}
