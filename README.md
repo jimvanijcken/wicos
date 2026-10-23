@@ -2,6 +2,13 @@
 
 Classification of four hand gestures (wave, pinch, swipe, click) from micro-Doppler spectrograms of six persons.
 
+EE4C12 final project (WICOS track) by:
+
+| name | student number |
+|---|---|
+| Jim van IJcken | 5840597 |
+| Huib Maas | 5858038 |
+
 ## Contents
 | path | content |
 |---|---|
